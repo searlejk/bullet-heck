@@ -238,9 +238,9 @@ for (const [el, ids] of Object.entries({ burn: ['flare', 'flamer', 'dragon', 'rp
   shock: ['zapper', 'rail', 'nova', 'splitter'] })) for (const id of ids) { GUNS[id].elem = el; if (GUNS[id].kind !== 'beam') GUNS[id].color = { chill: '#bfeaff', burn: '#ff5a32', shock: '#ffd21a' }[el]; }   // ice guns fire pale blue, fire guns red, shock guns gold
 // one-button active items, charged by kills (a room clear adds 2)
 const ACTIVES = {
-  turret: { name: 'Sentry Turret', desc: 'A turret copies your gun at half damage for 8 s', need: 10, spr: 'column', color: '#bfe6ff' },
+  turret: { name: 'Sentry Turret', desc: 'A turret copies your gun at half damage for 8 s of shooting', need: 10, spr: 'column', color: '#bfe6ff' },
   shield: { name: 'Bubble Shield', desc: 'Pops every bullet near you for 3 s', need: 8, spr: 'flask_big_blue', color: '#8fd8ff' },
-  slow:   { name: 'Hourglass', desc: 'Foes and their bullets crawl for 4 s', need: 9, spr: 'flask_big_green', color: '#a7f070' },
+  slow:   { name: 'Hourglass', desc: 'Slows time for 4 seconds', need: 9, spr: 'flask_big_green', color: '#a7f070' },
   decoy:  { name: 'Decoy Dummy', desc: 'Foes shoot at a dummy for 5 s', need: 9, spr: 'skull', color: '#ffcf6b' },
 };
 const LOOT_GUNS = Object.values(GUNS).filter(g => !g.starter);
@@ -833,6 +833,30 @@ const onIce = (x, y) => (room.ice || []).some(m => x > m.x && x < m.x + m.w && y
 const inRift = (x, y) => (room.rifts || []).some(q => dist(x, y, q.x, q.y) < q.r);
 const inMoss = (x, y) => (room.moss || []).some(m => x > m.x && x < m.x + m.w && y > m.y && y < m.y + m.h);
 const inDoorLane = (tx, ty) => (tx >= 7 && tx <= 9 && (ty <= 4 || ty >= 7)) || (ty >= 4 && ty <= 7 && (tx <= 3 || tx >= 13));
+// Inner walls, built from the zone's wall tiles: 30% of fights get a few short ones (2-3 tiles), 5% get one long one
+// (6-9 tiles). Each tile is a block in room.cols, so collision and bullets treat it like a pillar. Walls keep off the
+// door lanes and the spawn spot and keep two tiles from pillars and other walls (one from kegs), so nothing gets sealed in.
+function placeWalls(room, r, blocked) {
+  const rowOf = c => c.wall ? c.wall.row : Math.floor((c.y + 8) / T);   // a block's tile row (wall tiles store theirs)
+  const near = (tx, ty) => room.cols.some(c => Math.abs(c.x / T - tx) <= 2 && Math.abs(rowOf(c) - ty) <= 2) || room.crates.some(c => Math.abs((c.x - 8) / T - tx) <= 1 && Math.abs(Math.floor((c.y - 12) / T) - ty) <= 1);   // two clear tiles from any pillar or wall, so no narrow dead ends
+  const tiles = (tx, ty, len, vert) => Array.from({ length: len }, (_, i) => vert ? [tx, ty + i] : [tx + i, ty]);
+  const wet = (tx, ty) => room.puddles.some(p => tx * T + 8 > p.x - 4 && tx * T + 8 < p.x + p.w + 4 && ty * T + 8 > p.y - 4 && ty * T + 8 < p.y + p.h + 4);   // walls stay out of the water
+  const fits = list => list.every(([tx, ty]) => tx >= 2 && tx <= 14 && ty >= 3 && ty <= 8 && !blocked(tx, ty) && !near(tx, ty) && !wet(tx, ty));
+  const build = (tx, ty, len, vert) => tiles(tx, ty, len, vert).forEach(([x, y], i) => room.cols.push(vert
+    ? { x: x * T, y: y * T, w: T, h: i === len - 1 ? T + 8 : T, wall: { row: y, top: i === 0 ? y * T : null, front: (y + 1) * T } }   // a vertical run: brick faces all the way down, the lip on top
+    : { x: x * T, y: y * T + 8, w: T, h: T, wall: { row: y, top: y * T, front: (y + 1) * T } }));
+  if (r() < 0.05) {   // rare: one long wall splitting the room, with a way round at both ends
+    const opts = [[4, 5, 9, false], [5, 5, 7, false], [5, 3, 6, true], [11, 3, 6, true]], [tx, ty, len, v] = opts[Math.floor(r() * opts.length)], line = tiles(tx, ty, len, v);
+    const inWay = (x, y, d = 1) => line.some(([lx, ly]) => Math.abs(lx - x) <= d && Math.abs(ly - y) <= d);   // clear pillars and kegs off its line so it always fits
+    room.cols = room.cols.filter(c => !inWay(c.x / T, rowOf(c), 2));   // pillars stand three tiles tall: keep them two clear room.crates = room.crates.filter(c => !inWay((c.x - 8) / T, Math.floor((c.y - 12) / T)));
+    room.puddles = room.puddles.filter(p => !line.some(([lx, ly]) => lx * T + 8 > p.x - 4 && lx * T + 8 < p.x + p.w + 4 && ly * T + 8 > p.y - 4 && ly * T + 8 < p.y + p.h + 4));   // and any pool it would cross
+    room.hadBarrels = room.crates.some(c => c.barrel); build(tx, ty, len, v); room.longWall = 1;
+  }
+  if (r() < 0.4) for (let k = 0, want = 2 + Math.floor(r() * 2), tries = 0; k < want && tries < 120; tries++) {   // 0.4: some crowded rooms can't fit one, so about 30% of fights end up with them
+    const vert = r() < 0.5, len = 2 + Math.floor(r() * 2), tx = 2 + Math.floor(r() * 13), ty = 3 + Math.floor(r() * 6);
+    if (fits(tiles(tx, ty, len, vert))) { build(tx, ty, len, vert); k++; }
+  }
+}
 function furnish(room) {
   sizeFor(room);   // furnish to this room's own size (a floor can be generated while you stand in the wider Camp)
   const r = mulberry32(room.seed);
@@ -861,6 +885,7 @@ function furnish(room) {
     room.hadBarrels = room.crates.some(c => c.barrel);
     if (hasMod('flooded')) for (const [x0, y0] of [[2, 2], [12, 7]]) room.puddles.push({ x: (x0 + Math.floor(r() * 2)) * T, y: (y0 + Math.floor(r() * 2)) * T, w: 3 * T, h: 2 * T, cd: 0, flash: 0 });   // Flooded: two extra pools in the corners
     for (const [tx0, ty, w, h] of tpl.w) { const x0 = flip ? 17 - tx0 - w : tx0; room.puddles.push({ x: x0 * T, y: ty * T, w: w * T, h: h * T, cd: 0, flash: 0 }); }
+    placeWalls(room, r, blocked);
     room.moss = []; room.vents = [];
     const freeTile = () => { for (let k = 0; k < 30; k++) { const tx = 2 + Math.floor(r() * 13), ty = 3 + Math.floor(r() * 6);
       if (!inDoorLane(tx, ty) && !(Math.abs(tx - 8.5) < 2 && ty >= 5 && ty <= 8) && !room.cols.some(c => Math.abs(c.x - tx * T) < T * 1.5 && Math.abs(c.y - ty * T) < T * 1.5) && !room.crates.some(c => Math.abs(c.x - tx * T - 8) < 20 && Math.abs(c.y - ty * T - 12) < 20)) return [tx, ty]; } return null; };
@@ -1916,7 +1941,8 @@ function update(dt) {
     if (!e.gen && P.shieldT > 0 && dist(e.x, e.y - 4, P.x, P.y - 4) < e.r + 16) {   // the Bubble Shield shoves foes back instead of letting them hit
       const a = Math.atan2(e.y - P.y, e.x - P.x); if (!e.boss) collideMove(e, clamp(e.x + Math.cos(a) * 3, X0, X1), clamp(e.y + Math.sin(a) * 3, Y0, Y1), e.r); if (e.charge) e.charge = null; }
     else if (!e.gen && dist(e.x, e.y - 4, P.x, P.y - 4) < e.r + PR + 1) {
-      if (!e.boss) { const a = Math.atan2(e.y - P.y, e.x - P.x); e.knock = { vx: Math.cos(a) * 150, vy: Math.sin(a) * 150, t: 0.35 }; if (e.charge) e.charge = null; }   // bounce back off the player
+      if (!e.boss) { const a = Math.atan2(e.y - P.y, e.x - P.x), fresh = !(e.knock && e.knock.t > 0); e.knock = { vx: Math.cos(a) * 150, vy: Math.sin(a) * 150, t: 0.35 }; if (e.charge) e.charge = null;   // bounce back off the player
+        if (fresh) damageEnemy(e, e.maxHp * 0.5, 0, 0); }   // and the bump costs it half its health (once per bounce)
       if (save.armor.eq === 'ember' && !run.camp) applyElem(e, 'burn', 6 + 6 * (save.armor.owned.ember || 0));   // Ember Plate
       hurtPlayer(e.boss ? e.boss.name : nameOf(e.id)); }
   }
@@ -1932,9 +1958,10 @@ function update(dt) {
     if (f.tick <= 0) { f.tick = 0.3; for (const e of enemies) if (!e.dead && dist(f.x, f.y, e.x, e.y - 6) < f.r + e.r) applyElem(e, 'burn', 10); }
     if (rnd() < dt * 20) parts.push({ x: f.x + (rnd() - 0.5) * f.r * 1.6, y: f.y + (rnd() - 0.5) * f.r, vx: 0, vy: -40, life: 0.5, t: 0, size: 8, name: 'light_01', color: '#ff8a3d', glow: 1 }); }
   if (room.fires) room.fires = room.fires.filter(f => f.t > 0);
-  for (const tu of turrets) { tu.t -= dt; tu.cd -= dt; const g = curGun(); if (!g) continue; const def = g.def;
+  for (const tu of turrets) { tu.cd -= dt; const g = curGun(); if (!g) continue; const def = g.def;
     const tgt = enemies.filter(e => !e.dead && e.spawn <= 0 && !e.gen).sort((a, b) => dist(a.x, a.y, tu.x, tu.y) - dist(b.x, b.y, tu.x, tu.y))[0];
     if (!tgt || dist(tgt.x, tgt.y, tu.x, tu.y) > 200) continue;
+    tu.t -= dt;   // the turret only wears down while it has something to shoot
     tu.aim = Math.atan2(tgt.y - 6 - (tu.y - 14), tgt.x - tu.x); tu.tx = tgt.x; tu.ty = tgt.y - 6; tu.def = def;
     if (def.kind === 'beam') { fireGun({ def }, dt, tu); continue; }
     if (tu.cd <= 0) { tu.cd = def.charge ? def.charge + 0.25 : 1 / ((def.rate || 4) * (def.burst || 1) * (def.spin ? 0.7 : 1));
@@ -2285,7 +2312,9 @@ function drawKey(x, y) {   // pixel key: a ring and a toothed shaft
 function drawEntitySorted() {
   const list = [];
   for (const p of room.pickups) list.push({ y: p.y - 4, f: () => drawPickup(p) });
-  for (const c of room.cols) list.push({ y: c.y + c.h - COL_LIFT - 2, f: () => { sp('column', c.x + 8, c.y + c.h); } });   // sorted by its base, which sits half a tile up
+  const WSs = themedSheet(ZONES[themeOf(run.floor)].wall);
+  for (const c of room.cols) list.push({ y: c.y + c.h - COL_LIFT - 2, f: c.wall ? () => { if (c.wall.top !== null) sp('wall_top_mid', c.x + 8, c.wall.top, { sheet: WSs }); sp('wall_mid', c.x + 8, c.wall.front, { sheet: WSs }); }   // an inner wall tile: its brick face, with the top lip where one shows
+    : () => { sp('column', c.x + 8, c.y + c.h); } });   // sorted by its base, which sits half a tile up
   for (const c of room.crates) list.push({ y: c.y, f: () => { if (c.barrel) { const fr = 'bomb_f' + (c.ignite ? Math.floor(T_ * 12) % 3 : 0); sp(fr, c.x, c.y + 2, { scale: 1.2 }); sp(fr, c.x, c.y + 2, { scale: 1.2, over: '#d0583a', alpha: 0.28 });   // warm powder keg so it reads as explosive
       glow('light_01', '#ffb347', c.x + 3, c.y - 15, 9 + 3 * Math.sin(T_ * 16 + c.x), 0.85); ctx.fillStyle = '#fff3c4'; ctx.fillRect(Math.round(c.x + 2), Math.round(c.y - 16), 1, 1); } else sp('crate', c.x, c.y + 2); } });
   for (const tu of turrets) list.push({ y: tu.y, f: () => { const f = expiring(tu.t, 1.5); sp('column', tu.x, tu.y + 2, { scale: 0.55, alpha: f }); glow('light_01', '#bfe6ff', tu.x, tu.y - 10, 14, (0.5 + 0.3 * Math.sin(T_ * 10)) * f);   // flickers out over its last 1.5 s
