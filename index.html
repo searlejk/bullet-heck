@@ -128,7 +128,7 @@ const W = 960, H = 600, S = 3, T = 16, VW = 17, VH = 11, OX = (W - VW * T * S) /
 let RW = VW, RH = VH, X0, X1, Y0, Y1, camX = 0, camY = 0;   // the current room's size in tiles, its walkable box in art pixels, and the camera
 const CAMP_W = VW + 2, CAMP_H = VH;   // the Camp is one tile wider on each side than a dungeon room
 const PUBLIC_BUILD = true;   // true in the GitHub Pages build (tests/package-gunlight.py): debug tools are hidden there
-const DEBUG_FUSION_LEVEL = PUBLIC_BUILD ? 0 : 5;   // DEBUG: every level 5 has a fusion room (0 = off). TODO before release: set false or delete (owner's note)   // the Camp is bigger than a dungeon room; the camera follows you around it
+const DEBUG_FUSION_LEVEL = 5;   // every level 5 has a fusion room, on every build including the public site (0 = off). Owner's debug request. TODO before release: set false or delete (owner's note)   // the Camp is bigger than a dungeon room; the camera follows you around it
 const PR = 3, ZONE_LEN = 4, TARGET_PASS = 0.6, TAU = Math.PI * 2;
 // The descent never ends. Each zone is three floors and a guardian floor; the three zone looks cycle (Keep,
 // Crypts, Ember Depths, then the Keep again), and every full cycle adds a standing floor rule. Difficulty
@@ -163,7 +163,10 @@ const HEROES = {
   lizard: { name: 'Lizard', spr: 'lizard_m', hp: 8, speed: 76, blanks: 2, gun: 'snub_s', coins: 0, need: 4, perk: 'regen', blurb: 'Regrows half a heart every 3 rooms' },
   dwarf:  { name: 'Dwarf', spr: 'dwarf_m', hp: 6, speed: 74, blanks: 4, rebomb: 20, gun: 'scatter_s', coins: 25, need: 6, blurb: 'Starts rich, 4 bombs that refill' },
 };
-const heroUnlockText = h => h.need === 0 ? 'Ready' : `Reach level ${h.need}`;
+// Heroes join one per finished run, in this order (the Lizard last); the Knight is there from the start.
+const HERO_ORDER = ['knight', 'elf', 'wizard', 'dwarf', 'lizard'];
+const nextHero = () => HERO_ORDER.find(id => !heroUnlocked(id)) || null;
+const heroUnlockText = id => { const n = HERO_ORDER.filter(k => !heroUnlocked(k)).indexOf(id) + 1; return n <= 0 ? 'Ready' : n === 1 ? 'Joins after your next run' : `Joins after ${n} more runs`; };
 
 // ---------- guns ----------
 // Stats in art pixels and seconds. Tiers follow Gungeon's D/C/B/A/S; DPS bands from the research report
@@ -521,6 +524,7 @@ migrateSave();
 // while it plays and restored exactly when you stop, so its runs never count as yours.
 let aiWatch = false, aiSpeed = 1, aiSave = null, aiFrom = null;   // aiFrom: where you were when the AI took over ('run', 'tutorial' or 'camp')
 function migrateSave() {   // batch 2 rebuilt the Armory lines; keep what an older save had paid for
+  if (!save.heroesUnlocked) save.heroesUnlocked = Object.keys(HEROES).filter(id => HEROES[id].need > 0 && save.bestFloor >= HEROES[id].need);   // heroes an older save had earned by depth stay unlocked
   const u = save.gunUps || (save.gunUps = {});
   if (u.reload || u.mag) { u.handling = Math.min(3, Math.max(u.handling || 0, Math.ceil(((u.reload || 0) / 4 + (u.mag || 0) / 3) / 2 * 3))); delete u.reload; delete u.mag; }
   for (const k of ['rate', 'dmg']) if (u[k] > 3) u[k] = Math.min(3, Math.ceil(u[k] * 3 / 5));
@@ -582,7 +586,7 @@ addDay(save.activeDays, today());
 const session = { start: Date.now(), dur: 0, runs: 0, stuck: false };
 save.sessions.push(session); if (save.sessions.length > 100) save.sessions.shift();
 persist();
-const heroUnlocked = id => HEROES[id].need === 0 || save.bestFloor >= HEROES[id].need;
+const heroUnlocked = id => id === 'knight' || (save.heroesUnlocked || []).includes(id);
 
 // ---------- canvas & sprites ----------
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
@@ -842,13 +846,18 @@ function placeWalls(room, r, blocked) {
   const tiles = (tx, ty, len, vert) => Array.from({ length: len }, (_, i) => vert ? [tx, ty + i] : [tx + i, ty]);
   const wet = (tx, ty) => room.puddles.some(p => tx * T + 8 > p.x - 4 && tx * T + 8 < p.x + p.w + 4 && ty * T + 8 > p.y - 4 && ty * T + 8 < p.y + p.h + 4);   // walls stay out of the water
   const fits = list => list.every(([tx, ty]) => tx >= 2 && tx <= 14 && ty >= 3 && ty <= 8 && !blocked(tx, ty) && !near(tx, ty) && !wet(tx, ty));
-  const build = (tx, ty, len, vert) => tiles(tx, ty, len, vert).forEach(([x, y], i) => room.cols.push(vert
-    ? { x: x * T, y: y * T, w: T, h: i === len - 1 ? T + 8 : T, wall: { row: y, top: i === 0 ? y * T : null, front: (y + 1) * T } }   // a vertical run: brick faces all the way down, the lip on top
-    : { x: x * T, y: y * T + 8, w: T, h: T, wall: { row: y, top: y * T, front: (y + 1) * T } }));
+  // A wall tile shows a 4 px lip and a 16 px brick face (rows y*T-4 .. (y+1)*T). Its feet hitbox is only the bottom
+  // 6 px of the face, so you can step in behind the bricks from above (and are drawn behind them); from the sides
+  // and below it stops you where the bricks are. cols use c.y - COL_LIFT .. c.y + c.h - COL_LIFT, hence the +8.
+  // Bullets use wall.by0..by1 instead (like a pillar's shot box, offset by the 9 px gun height): shots over the top pass, shots into the bricks stop.
+  const build = (tx, ty, len, vert) => tiles(tx, ty, len, vert).forEach(([x, y], i) => {
+    const body = vert && i > 0 ? { y: y * T + 2, h: T + 6 } : { y: (y + 1) * T + 2, h: 6 };   // a vertical run is solid below its first tile
+    room.cols.push({ x: x * T, w: T, ...body, wall: { row: y, top: !vert || i === 0 ? y * T : null, front: (y + 1) * T, by0: !vert || i === 0 ? y * T - 3 : y * T - 5, by1: (y + 1) * T - 4 } });   // shots fly 9 px above feet, so the shot box sits just above the feet box: sideways shots from behind or below clear it, shots into it stop
+  });
   if (r() < 0.05) {   // rare: one long wall splitting the room, with a way round at both ends
-    const opts = [[4, 5, 9, false], [5, 5, 7, false], [5, 3, 6, true], [11, 3, 6, true]], [tx, ty, len, v] = opts[Math.floor(r() * opts.length)], line = tiles(tx, ty, len, v);
+    const opts = [[4, 5, 9, false], [5, 5, 7, false], [5, 3, 5, true], [11, 3, 5, true]] /* vertical ones stop at row 7, leaving a full gap at both ends */, [tx, ty, len, v] = opts[Math.floor(r() * opts.length)], line = tiles(tx, ty, len, v);
     const inWay = (x, y, d = 1) => line.some(([lx, ly]) => Math.abs(lx - x) <= d && Math.abs(ly - y) <= d);   // clear pillars and kegs off its line so it always fits
-    room.cols = room.cols.filter(c => !inWay(c.x / T, rowOf(c), 2));   // pillars stand three tiles tall: keep them two clear room.crates = room.crates.filter(c => !inWay((c.x - 8) / T, Math.floor((c.y - 12) / T)));
+    room.cols = room.cols.filter(c => !inWay(c.x / T, rowOf(c), 2)); /* pillars stand three tiles tall: keep them two clear */ room.crates = room.crates.filter(c => !inWay((c.x - 8) / T, Math.floor((c.y - 12) / T)));
     room.puddles = room.puddles.filter(p => !line.some(([lx, ly]) => lx * T + 8 > p.x - 4 && lx * T + 8 < p.x + p.w + 4 && ly * T + 8 > p.y - 4 && ly * T + 8 < p.y + p.h + 4));   // and any pool it would cross
     room.hadBarrels = room.crates.some(c => c.barrel); build(tx, ty, len, v); room.longWall = 1;
   }
@@ -1192,7 +1201,7 @@ function renderStation(id) {
   p.querySelectorAll('[data-close]').forEach(b => b.onclick = () => toggleMenu(false));
 }
 function swapHero(p) {
-  if (p.locked) { floatText(heroUnlockText(HEROES[p.hero]), p.x, p.y - 26, '#b0a090'); tone(200, 0.08, 'square', 0.03); return; }
+  if (p.locked) { floatText(heroUnlockText(p.hero), p.x, p.y - 26, '#b0a090'); tone(200, 0.08, 'square', 0.03); return; }
   save.hero = p.hero; persist(); const h = HEROES[p.hero], x = P.x, y = P.y;
   Object.assign(P, { hero: h, hp: h.hp, maxHp: h.hp, speed: h.speed }); campPeople(room); P.x = x; P.y = y;
   floatText(h.name, P.x, P.y - 30, '#ffe39a'); tone(660, 0.12, 'triangle', 0.07); tone(990, 0.16, 'triangle', 0.05);
@@ -1359,7 +1368,7 @@ function startBoss() {
 }
 // Bullets fly about a hand's height above the floor, so against a column they collide with the drawn shaft:
 // a box raised above the column's floor tile.
-const bulletCol = (x, y) => room.cols.find(c => x > c.x + 1 && x < c.x + c.w - 1 && y > c.y - 22 && y < c.y + c.h - 14);
+const bulletCol = (x, y) => room.cols.find(c => x > c.x + 1 && x < c.x + c.w - 1 && (c.wall ? y > c.wall.by0 && y < c.wall.by1 : y > c.y - 22 && y < c.y + c.h - 14));   // walls: their visible bricks
 const COL_LIFT = 8;   // a column's walking footprint is half a tile above its floor tile, matching the drawn base
 function solidAt(x, y, pad = 0) {
   if (!room) return false;
@@ -1684,7 +1693,7 @@ function die() {
   for (let k = 0; k < 24; k++) parts.push({ x: P.x, y: P.y - 8, vx: (rnd() - 0.5) * 140, vy: (rnd() - 0.5) * 140, life: 0.8, t: 0, size: 10, name: 'star_06', color: '#ff9cc0', glow: 1 });
   save.lossStreak++; save.lastDeathFloor = run.floor; run.end = 'died'; bankEmbers(1);
   const k = run.killer || 'a stray bullet'; save.killers[k] = (save.killers[k] || 0) + 1;
-  save.lastRun = { floor: run.floor, mins: +(run.t / 60).toFixed(1), embers: run.banked, parts: run.parts || 0, killer: k, newHero: (Object.entries(HEROES).find(([, h]) => h.need > run.bestBefore && h.need <= save.bestFloor) || [])[0] || null };
+  save.lastRun = { floor: run.floor, mins: +(run.t / 60).toFixed(1), embers: run.banked, parts: run.parts || 0, killer: k, newHero: null };   // recordRun fills in a newly joined hero
   recordRun(false);
   if (BOT_MODE !== 'test' && BOT_MODE !== 'progress') setTimeout(() => { if (state === 'dead') { if (BOT_MODE || aiWatch) { if (lab) startGunLab(lab.gun, lab.watch); else newRun(); if (window.humanBot) humanBot.reset(); } else enterCamp(true); } }, 1800);   // every run ends back at the Camp
 }
@@ -1742,6 +1751,7 @@ function bankEmbers(share) { run.banked = Math.round((run.embers + Math.floor(P.
 function recordRun(won) {
   save.runs.push({ hero: P.hero.name, floor: run.floor, won, firstFind: run.firstFindT === undefined ? null : Math.round(run.firstFindT), pacts: (run.pacts || []).length, challenge: run.challenge || null, embers: run.banked || 0, mins: +(run.t / 60).toFixed(1), secs: Math.round((Date.now() - run.start) / 1000), rooms: run.roomsSeen, guns: run.guns, items: run.items, killer: won ? '' : run.killer, day: today() });
   if (save.runs.length > 200) save.runs.shift();
+  const nh = !run.challenge && nextHero(); if (nh) { save.heroesUnlocked.push(nh); if (save.lastRun) save.lastRun.newHero = nh; }   // one new hero per finished run
   persist();
 }
 
@@ -2260,6 +2270,21 @@ function drawCampLantern(x, y) {   // drawn with the other Camp props, so you ca
   // embers: single pixels that rise, sway and fade
   if (rnd() < 0.18) parts.push({ x: x + Math.round((rnd() - 0.5) * 8), y: top - 4, vx: 0, vy: -10 - rnd() * 8, grav: -3, life: 1.6, t: 0, size: 1, rect: rnd() < 0.5 ? '#ffb347' : '#ffe08a', pix: 1, sway: rnd() * 6 });
 }
+function drawHeroCard(p) {   // a pixel card in the bottom-left: sprite, hearts, speed, bombs, starting gun and perk
+  const h = HEROES[p.hero], locked = p.locked; ctx.font = `700 ${opt('bigText') ? 15 : 13}px system-ui,-apple-system,sans-serif`;
+  const x = 24, w = Math.max(340, Math.ceil(ctx.measureText(locked ? 'Finish runs to bring them in' : h.blurb).width) + 140), hgt = 150, y = H - hgt - 24;   // as wide as the perk text needs
+  nineSlice(UIFRAME, x, y, w, hgt, 7, 9, 7, 10, 3);
+  ctx.save(); ctx.imageSmoothingEnabled = false; ctx.translate(x + 52, y + 96); ctx.scale(3, 3); sp(animName(h.spr, false, T_), 0, 0, locked ? { over: '#1a1420', alpha: 0.85 } : {}); ctx.restore();
+  hudText(locked ? '???' : h.name, x + 96, y + 34, 20, locked ? '#8a8090' : '#fff3c4', 'left', 900);
+  if (locked) { hudText(heroUnlockText(p.hero), x + 96, y + 64, 14, '#d2aa99', 'left'); hudText(HERO_ORDER.indexOf(p.hero) === HERO_ORDER.length - 1 ? 'The last to join' : 'Finish runs to bring them in', x + 96, y + 88, 12, '#a89e94', 'left'); return; }
+  for (let k = 0; k < Math.ceil(h.hp / 2); k++) { ctx.save(); ctx.translate(x + 100 + k * 17, y + 56); ctx.scale(1.2, 1.2); sp('ui_heart_full', 0, 6); ctx.restore(); }
+  const spd = h.speed >= 88 ? 'Fast' : h.speed >= 80 ? 'Normal' : 'Slow';
+  hudText(`${spd}  ·  ${h.blanks} bombs${h.rebomb ? ' (refill)' : ''}${h.coins ? `  ·  ${h.coins} coins` : ''}`, x + 100 + Math.ceil(h.hp / 2) * 17 + 6, y + 60, 12, '#e0d6cc', 'left');
+  const g = GUNS[h.gun]; ctx.save(); ctx.translate(x + 112, y + 86); ctx.scale(2, 2); gunSprite(g, 0, 0, 0); ctx.restore();
+  hudText(g.name, x + 150, y + 86, 13, TIER_COLOR[g.tier], 'left', 800);
+  hudText(h.blurb, x + 96, y + 116, 13, '#ffe39a', 'left');
+  if (save.hero === p.hero) hudText('Playing now', x + w - 30, y + 34, 11, '#a7f070', 'right');
+}
 function drawPadlock(x, y) {   // a little gold padlock on a vault door
   x = Math.round(x); y = Math.round(y); ctx.fillStyle = '#2a1e10'; ctx.fillRect(x - 4, y - 1, 9, 7); ctx.fillRect(x - 3, y - 5, 7, 5);
   ctx.fillStyle = '#ffcf6b'; ctx.fillRect(x - 3, y, 7, 5); ctx.fillStyle = '#c99a3a'; ctx.fillRect(x - 2, y - 4, 1, 4); ctx.fillRect(x + 2, y - 4, 1, 4); ctx.fillRect(x - 2, y - 4, 5, 1);
@@ -2349,7 +2374,7 @@ function drawEnemy(e) {
   if ((e.tele > 0 && (e.d.ai === 'charger' || e.nextMove === 'charge')) || (e.charge && e.tele > 0)) {
     const a = e.teleAng; ctx.strokeStyle = 'rgba(255,120,150,0.5)'; ctx.lineWidth = 2; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(e.x, e.y - 6); ctx.lineTo(e.x + Math.cos(a) * (e.boss ? 85 * bossSkill() : 84), e.y - 6 + Math.sin(a) * 70); ctx.stroke(); ctx.setLineDash([]); }
   sp(name, e.x, e.y, { flip: e.face < 0, scale: big, });
-  if (confused() && !e.gen) roomText('?', e.x, e.y - 20 * big, 8, '#ffe39a', Math.min(1, decoyLost.t * 4));   // lost the decoy
+  if (confused() && !e.gen) drawPixelQ(e.x, e.y - 22 * big - (Math.floor(T_ * 6) % 2), decoyLost.t > 0.15 ? 1 : 0.5);   // lost the decoy
   if (e.boss && e.boss.tint) sp(name, e.x, e.y, { flip: e.face < 0, scale: big, over: e.boss.tint === 1 ? '#5a78ff' : e.boss.tint, alpha: 0.38 });   // recolour only the sprite's own pixels
   const st = e.st;   // status tints over the sprite's own pixels
   if (st && st.frozen > 0) sp(name, e.x, e.y, { flip: e.face < 0, scale: big, over: '#bfe6ff', alpha: 0.65 });
@@ -2514,7 +2539,7 @@ function draw() {
   // interact prompt and floating texts (room space)
   const near = state === 'play' && nearestInteract();
   if (near) { const label = near.kind === 'chest' ? 'E  open' : near.kind === 'gun' ? `E  ${GUNS[near.gun].name} (${GUNS[near.gun].tier})` : near.kind === 'item' ? `E  ${ITEMS.find(i => i.id === near.item).name}` : near.kind === 'vessel' ? 'E  heart container' : near.kind === 'active' ? `E  ${ACTIVES[near.active].name}` : near.kind === 'heart' ? 'E  heal 1 heart'
-      : near.kind === 'showgun' ? `E  pick up ${GUNS[near.gun].name}` : near.kind === 'fuser' ? (near.used ? 'The device is spent' : P.guns.length < 2 ? 'Carry two guns to fuse them' : (pl => pl.def ? `E  fuse into ${pl.def.name}` : pl.why)(fusionPlan(P.guns[0].def, P.guns[1].def))) : near.kind === 'station' ? (stationOpen(near.station) ? `E  ${STATIONS[near.station].name}: ${STATIONS[near.station].what}` : stationLockText(near.station)) : near.kind === 'hero' ? (near.locked ? heroUnlockText(HEROES[near.hero]) : `E  play as ${HEROES[near.hero].name} · ${HEROES[near.hero].blurb}`) : near.kind === 'npc' ? `E  talk to ${near.npc.name}`
+      : near.kind === 'showgun' ? `E  pick up ${GUNS[near.gun].name}` : near.kind === 'fuser' ? (near.used ? 'The device is spent' : P.guns.length < 2 ? 'Carry two guns to fuse them' : (pl => pl.def ? `E  fuse into ${pl.def.name}` : pl.why)(fusionPlan(P.guns[0].def, P.guns[1].def))) : near.kind === 'station' ? (stationOpen(near.station) ? `E  ${STATIONS[near.station].name}: ${STATIONS[near.station].what}` : stationLockText(near.station)) : near.kind === 'hero' ? (near.locked ? heroUnlockText(near.hero) : `E  play as ${HEROES[near.hero].name}`) : near.kind === 'npc' ? `E  talk to ${near.npc.name}`
       : near.kind === 'shrine' ? 'E  pray: gain power, but also a curse' : near.kind === 'gamble' ? 'E  gamble' : near.kind === 'cage' ? `E  free ${near.npc.name}` : near.kind === 'key' ? 'E  buy a key' : `E  buy`;
     roomText(label, near.x, near.y - 24, 6, '#fff3c4');
     if (near.kind === 'item' && near.price) roomText(ITEMS.find(i => i.id === near.item).desc, near.x, near.y - 16, 5, '#d8d0c8');
@@ -2524,6 +2549,7 @@ function draw() {
   // HUD in logical space
   ctx.restore(); ctx.setTransform(scale, 0, 0, scale, offX, offY);
   if (P) drawHud();
+  if (near && near.kind === 'hero' && !menuOpen) drawHeroCard(near);   // the Camp: walk up to a hero to see what they bring
   const boss = enemies.find(e => e.boss);
   if (boss && boss.spawn <= 0) { const bw = 520, bx = (W - bw) / 2, by = H - 22;
     ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(bx - 2, by - 2, bw + 4, 12); ctx.fillStyle = '#ff6b8f'; ctx.fillRect(bx, by, bw * Math.max(0, boss.hp) / boss.maxHp, 8);
@@ -2568,6 +2594,14 @@ function drawDescentIcon(k, x, y, hov) {   // door icons, drawn from the same ti
   if (k === 'event') { ctx.restore(); hudText('?', x, y - 22, 64, DESCENT[k].color, 'center', 900); return; }
   if (k === 'lantern') { ctx.scale(4, 4); sp('flask_big_green', 0, 2); }
   ctx.restore();
+}
+// a pixel '?' drawn after m6x11 (the pixel font Balatro uses, by Daniel Linssen), with a dark outline
+const QMARK_PX = ['.###.', '#...#', '....#', '..##.', '..#..', '.....', '..#..'];
+function drawPixelQ(x, y, alpha = 1) {
+  const ox = Math.round(x) - 2, oy = Math.round(y) - 7; ctx.globalAlpha = alpha;
+  ctx.fillStyle = '#2a1e10'; QMARK_PX.forEach((row, j) => [...row].forEach((ch, i) => { if (ch === '#') ctx.fillRect(ox + i - 1, oy + j - 1, 3, 3); }));   // outline
+  ctx.fillStyle = '#ffe39a'; QMARK_PX.forEach((row, j) => [...row].forEach((ch, i) => { if (ch === '#') ctx.fillRect(ox + i, oy + j, 1, 1); }));
+  ctx.globalAlpha = 1;
 }
 const SHIELD_PX = ['.XXXXXXX.', 'XooooooOX', 'XoOOOOOoX', 'XoOOOOOoX', 'XoOOOOOoX', '.XoOOOoX.', '.XoOOOoX.', '..XoOoX..', '...XoX...', '....X....'];
 function drawShieldIcon(x, y, alpha, pop) {   // a little pixel shield that pops up when the Iron Vest blocks a hit
@@ -2665,7 +2699,7 @@ function toggleMenu(force) {
 }
 function heroGrid() {
   return `<div class="heroes">${Object.entries(HEROES).map(([id, h]) => { const ok = heroUnlocked(id);
-    return `<button data-hero="${id}" class="${save.hero === id ? 'on' : ''}" ${ok ? '' : 'disabled'}><b>${h.name}</b><small>${ok ? h.blurb : '🔒 ' + heroUnlockText(h)}</small></button>`; }).join('')}</div>`;
+    return `<button data-hero="${id}" class="${save.hero === id ? 'on' : ''}" ${ok ? '' : 'disabled'}><b>${h.name}</b><small>${ok ? h.blurb : '🔒 ' + heroUnlockText(id)}</small></button>`; }).join('')}</div>`;
 }
 // ---------- pause screen sides and the Almanac ----------
 const tierName = t => t === 'X' ? 'Fused' : { D: 'Common', C: 'Uncommon', B: 'Rare', A: 'Epic', S: 'Legendary' }[t] + ` (${t})`;
@@ -2814,7 +2848,7 @@ function renderPanel() {
 function showSummary(won) {
   menuOpen = true; view = 'summary'; $('overlay').classList.remove('hidden'); $('panel').className = 'panel'; applyMusicVolume();
   const last = save.runs[save.runs.length - 1] || {};
-  const newHero = Object.entries(HEROES).find(([id, h]) => h.need > run.bestBefore && h.need <= save.bestFloor && h.need > 0);
+  const newHero = save.lastRun && save.lastRun.newHero ? [save.lastRun.newHero, HEROES[save.lastRun.newHero]] : null;
   $('panel').innerHTML = `<h2>${won ? `Back at Camp from level ${run.floor}` : `Fell on level ${run.floor}`}</h2>
     <p class="note" style="margin-top:0">${won ? 'You took the guardian’s stairs home with everything you found.' : `Taken down by ${run.killer || 'the dark'}. Every run teaches something.`}</p>
     <p class="note good">Embers brought home: <b>${run.banked || 0}</b>${won ? '' : ' (half of what you carried)'} · total ${save.embers || 0}${save.rescued.length ? ` · rescued: ${save.rescued.length}` : ''}</p>
@@ -3038,7 +3072,10 @@ if (BOT_MODE) { const s = document.createElement('script'); s.src = 'tests/gunli
   function pathTo(tx, ty) {
     const tile = (x, y) => [clamp(Math.floor(x / T), 1, RW - 2), clamp(Math.floor(y / T), 2, RH - 2)];
     const free = (cx, cy) => !solidAt(cx * T + 8, cy * T + 8, PR + 3);
-    const [sx, sy] = tile(P.x, P.y), [gx, gy] = tile(tx, ty), key = (x, y) => x * 32 + y;
+    let [sx, sy] = tile(P.x, P.y); const [gx, gy] = tile(tx, ty), key = (x, y) => x * 32 + y;
+    if (!free(sx, sy)) {   // standing tucked behind a wall puts you in its tile row: start from the open tile you can actually step to
+      const near = [[0, -1], [0, 1], [-1, 0], [1, 0]].map(([dx, dy]) => [sx + dx, sy + dy]).filter(([x, y]) => x >= 1 && y >= 2 && x <= RW - 2 && y <= RH - 2 && free(x, y) && clearLine(P.x, P.y, x * T + 8, y * T + 8, PR + 1));
+      if (near.length) [sx, sy] = near.sort((a, b) => dist(P.x, P.y, a[0] * T + 8, a[1] * T + 8) - dist(P.x, P.y, b[0] * T + 8, b[1] * T + 8))[0]; }
     const prev = new Map([[key(sx, sy), null]]), q = [[sx, sy]];
     while (q.length) { const [x, y] = q.shift(); if (x === gx && y === gy) break;
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy;
