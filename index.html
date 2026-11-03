@@ -159,7 +159,7 @@ const pick = arr => arr[Math.floor(rnd() * arr.length)];
 const HEROES = {
   knight: { name: 'Knight', spr: 'knight_m', hp: 6, speed: 80, blanks: 2, gun: 'rusty', coins: 0, need: 0, perk: 'bash', blurb: 'Shield bash: rolls knock foes back and erase bullets' },
   elf:    { name: 'Elf', spr: 'elf_f', hp: 6, speed: 92, blanks: 2, gun: 'twin_s', coins: 0, need: 2, perk: 'twin', blurb: 'Double roll that leaves a decoy behind' },
-  wizard: { name: 'Wizard', spr: 'wizzard_m', hp: 6, speed: 82, blanks: 3, gun: 'spark_s', coins: 0, need: 3, perk: 'arcane', blurb: 'A quarter of shots Burn, Chill or Shock' },
+  wizard: { name: 'Wizard', spr: 'wizzard_m', hp: 6, speed: 82, blanks: 3, gun: 'spark_s', coins: 0, need: 3, perk: 'arcane', blurb: 'A quarter of shots Burn, Ice or Shock' },
   lizard: { name: 'Lizard', spr: 'lizard_m', hp: 8, speed: 76, blanks: 2, gun: 'snub_s', coins: 0, need: 4, perk: 'regen', blurb: 'Regrows half a heart every 3 rooms' },
   dwarf:  { name: 'Dwarf', spr: 'dwarf_m', hp: 6, speed: 74, blanks: 4, rebomb: 20, gun: 'scatter_s', coins: 25, need: 6, blurb: 'Starts rich, 4 bombs that refill' },
 };
@@ -183,7 +183,7 @@ function G(id, name, tier, cell, o) { GUNS[id] = Object.assign({ id, name, tier,
 // starters
 G('rusty',     'Rusty Pistol',   'D', [1, 0],  { dmg: 5, rate: 4, mag: 10, reload: 0.9, inf: 1, desc: 'Reliable. Never runs dry.' });
 G('twin_s',    'Pocket Twins',   'D', [1, 3],  { dmg: 3.5, rate: 4, mag: 12, pellets: 2, spread: 10, inf: 1, desc: 'Three little barrels.' });
-G('spark_s',   'Spark Wand',     'D', [0, 15], { dmg: 4.5, rate: 3, mag: 8, reload: 0.8, speed: 170, homing: 2.4, color: '#a8dcff', inf: 1, desc: 'Sparks curve toward foes.' });
+G('spark_s',   'Spark Wand',     'D', [0, 15], { dmg: 4.5, rate: 3, mag: 8, reload: 0.8, speed: 170, homing: 2.4, color: '#a8dcff', inf: 1, arcane: 0.25, desc: 'Sparks curve toward foes; a quarter of them Burn, Ice or Shock.' });
 G('snub_s',    'Old Revolver',   'D', [1, 7],  { dmg: 10, rate: 2, mag: 6, reload: 1.1, speed: 300, spread: 1, inf: 1, desc: 'Slow, heavy rounds.' });
 G('scatter_s', 'Scattergun',     'D', [3, 4],  { dmg: 3, rate: 1.6, mag: 4, reload: 1.2, pellets: 5, spread: 28, life: 0.35, speed: 230, inf: 1, desc: 'Point-blank party.' });
 // D
@@ -233,9 +233,9 @@ G('saw',      'Saw Launcher',   'S', [8, 2],  { dmg: 14, rate: 2, mag: 8, speed:
 // Burn ticks damage, Chill slows and then freezes, Shock chains to a neighbour. They react with each other and
 // with the room: frozen + Burn = Shatter, Shock on a foe standing in water = Stun Field, Burn setting off a
 // powder bomb = Firestorm. See design/Gunlight Depths overhaul design.md, section 3.
-const ELEM = { burn: { color: '#ff8a3d', name: 'Burn' }, chill: { color: '#8fd8ff', name: 'Ice' }, shock: { color: '#fff07a', name: 'Shock' } };
+const ELEM = { burn: { color: '#ff4a2a', name: 'Burn' }, chill: { color: '#8fd8ff', name: 'Ice' }, shock: { color: '#ffd21a', name: 'Shock' } };   // fire red, ice pale blue, shock gold
 for (const [el, ids] of Object.entries({ burn: ['flare', 'flamer', 'dragon', 'rpg', 'cluster', 'mortar'], chill: ['bubble', 'nailer', 'homer', 'ricochet', 'awp', 'prism'],
-  shock: ['spark_s', 'zapper', 'rail', 'nova', 'splitter'] })) for (const id of ids) { GUNS[id].elem = el; if (el === 'chill' && GUNS[id].kind !== 'beam') GUNS[id].color = '#bfeaff'; }   // ice guns fire pale blue
+  shock: ['zapper', 'rail', 'nova', 'splitter'] })) for (const id of ids) { GUNS[id].elem = el; if (GUNS[id].kind !== 'beam') GUNS[id].color = { chill: '#bfeaff', burn: '#ff5a32', shock: '#ffd21a' }[el]; }   // ice guns fire pale blue, fire guns red, shock guns gold
 // one-button active items, charged by kills (a room clear adds 2)
 const ACTIVES = {
   turret: { name: 'Sentry Turret', desc: 'A turret copies your gun at half damage for 8 s', need: 10, spr: 'column', color: '#bfe6ff' },
@@ -257,9 +257,9 @@ for (const [id, k] of Object.entries(GUN_TUNE)) { const g = GUNS[id]; if (!g) co
 // the family's trait and names it after both: Flamethrower + Uzi = "Dragon Uzi". When both guns are special, the
 // family higher in this list lends its trait. Fused guns never drop from chests; only the device makes them.
 const FUSE_RULES = [
-  { id: 'dragon', fname: 'Fire guns', name: 'Dragon', fam: ['flamer', 'dragon', 'flare'], ex: 'uzi', color: '#ff8a3d', desc: 'every bullet burns inside a ring of fire', apply: d => { d.fireAura = 1; d.elem = 'burn'; } },
+  { id: 'dragon', fname: 'Fire guns', name: 'Dragon', fam: ['flamer', 'dragon', 'flare'], ex: 'uzi', color: '#ff4a2a', desc: 'every bullet burns inside a ring of fire', apply: d => { d.fireAura = 1; d.elem = 'burn'; } },
   { id: 'boomer', fname: 'Boomerang', name: 'Boomerang', fam: ['boomer'], ex: 'rusty', color: '#ffe39a', desc: 'bullets curve out and loop back to you', apply: d => { d.boomPath = 1; d.pierce = 99; d.life = 4; d.speed = Math.max(d.speed || 240, 320); } },
-  { id: 'storm', fname: 'Shock guns', name: 'Storm', fam: ['zapper', 'spark_s', 'rail'], ex: 'ar', color: '#fff07a', desc: 'bullets Shock and arc to two more foes', apply: d => { d.elem = 'shock'; d.chain = Math.max(d.chain || 0, 2); } },
+  { id: 'storm', fname: 'Shock guns', name: 'Storm', fam: ['zapper', 'spark_s', 'rail'], ex: 'ar', color: '#ffd21a', desc: 'bullets Shock and arc to two more foes', apply: d => { d.elem = 'shock'; d.chain = Math.max(d.chain || 0, 2); } },
   { id: 'frost', fname: 'Ice guns', name: 'Frost', fam: ['bubble', 'homer', 'prism'], ex: 'revolver', color: '#8fd8ff', desc: 'bullets Chill foes until they freeze', apply: d => { d.elem = 'chill'; } },
   { id: 'blast', fname: 'Launchers', name: 'Blast', fam: ['rpg', 'gl', 'cluster', 'mortar'], ex: 'pea', color: '#ffcf6b', desc: 'bullets explode where they hit', apply: d => { d.explode = Math.max(d.explode || 0, 16); } },
   { id: 'seeker', fname: 'Homing guns', name: 'Seeker', fam: ['homer', 'swarm'], ex: 'burst', color: '#a8dcff', desc: 'bullets hunt down foes', apply: d => { d.homing = Math.max(d.homing || 0, 4); } },
@@ -1408,7 +1408,7 @@ function fireGun(g, dt, tu) {   // tu: a Sentry Turret firing a half-damage copy
       dmg: def.dmg * m.dmg * dmgMul * mul * (g.mk || 1) * (1 + 0.03 * gunLevel(def.id)), r: (def.size || 2) * (def.charge ? 0.8 + 2.4 * (g.chargeFrac || 0) : 1), pierce: (def.pierce || 0) + m.pierce, bounce: (def.bounce || 0) + m.bounce,
       homing: (def.homing || 0) + m.homing, explode: def.explode || 0, kind: def.kind, color: def.color, def, hit: new Set(), split: def.split || 0, splitAt: def.splitAt || 0,
       chain: def.chain || 0, shrapnel: def.shrapnel || 0, boom: def.boom || 0, elem: def.elem || rollElem(m) };
-    if (!b.elem && !tu && (run.challenge === 'elemental' || (P.hero.perk === 'arcane' && rnd() < 0.25))) b.elem = pick(['burn', 'chill', 'shock']);   // Wizard: arcane shots
+    if (!b.elem && !tu && (run.challenge === 'elemental' || rnd() < Math.max(def.arcane || 0, P.hero.perk === 'arcane' ? 0.25 : 0))) b.elem = pick(['burn', 'chill', 'shock']);   // the Spark Wand and the Wizard: a quarter of shots carry a random element (no stacking)
     if (b.elem && !def.elem) b.color = ELEM[b.elem].color;   // relic-element bullets wear their element's colour
     if (def.id === 'glacier' || (def.id === 'faithful' && (g.alt = !g.alt))) b.ghost = 1;   // these pass straight through enemy bullets
     if (m.boomChance && rnd() < m.boomChance && !b.explode) b.explode = 16;
@@ -2351,6 +2351,12 @@ function drawPlayer() {
   if (g && g.def.charge && g.charge > 0) { ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(P.x - 8, P.y + 4, 16, 2); ctx.fillStyle = '#9ff3ff'; ctx.fillRect(P.x - 8, P.y + 4, 16 * g.charge / g.def.charge, 2); }
   if (g && g.reloadT > 0) { const k = 1 - g.reloadT / (g.def.reload * playerMods().reload); ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(P.x - 8, P.y - 32, 16, 2); ctx.fillStyle = '#ffe39a'; ctx.fillRect(P.x - 8, P.y - 32, 16 * k, 2); }
 }
+function drawSparks(x, y, r) {   // tiny jagged lines crackling off a Shock bullet, new ones every frame
+  ctx.strokeStyle = '#fff6b0'; ctx.lineWidth = 0.9; ctx.beginPath();
+  for (let k = 0; k < 3; k++) { if (rnd() < 0.25) continue; const a = rnd() * TAU, a2 = a + (rnd() - 0.5) * 1.4, r1 = r + 0.5, r2 = r + 3 + rnd() * 2, r3 = r2 + 2 + rnd() * 2.5;
+    ctx.moveTo(x + Math.cos(a) * r1, y + Math.sin(a) * r1); ctx.lineTo(x + Math.cos(a) * r2, y + Math.sin(a) * r2); ctx.lineTo(x + Math.cos(a2) * r3, y + Math.sin(a2) * r3); }
+  ctx.stroke();
+}
 function drawBullets() {
   for (const b of pbul) {
     if (b.kind === 'flame') { glow('light_01', b.color, b.x, b.y, 10 + b.t * 30, 0.8 * (1 - b.t / b.life)); continue; }
@@ -2358,7 +2364,7 @@ function drawBullets() {
     if (b.kind === 'mortar') { ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(b.x, b.y, 4, 1.5, 0, 0, TAU); ctx.fill();
       ctx.strokeStyle = 'rgba(255,200,120,0.4)'; ctx.beginPath(); ctx.arc(b.tx, b.ty, b.explode * (1 - b.t / b.life * 0.5), 0, TAU); ctx.stroke(); glow('light_01', b.color, b.x, b.y - b.h, 14, 0.9); continue; }
     if (b.kind === 'saw') { ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.t * 20); ctx.fillStyle = '#e8eef5'; for (let k = 0; k < 6; k++) { ctx.rotate(TAU / 6); ctx.fillRect(-1, -b.r - 1.5, 2, 3); } ctx.beginPath(); ctx.arc(0, 0, b.r, 0, TAU); ctx.fill(); ctx.restore(); continue; }
-    if (b.def && b.def.fireAura) { glow('light_01', '#ff7a2a', b.x, b.y, 38, 0.4 + 0.1 * Math.sin(T_ * 20 + b.x)); ctx.strokeStyle = 'rgba(255,150,60,0.55)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(b.x, b.y, 12, 0, TAU); ctx.stroke(); }
+    if (b.def && b.def.fireAura) { glow('light_01', '#ff4a2a', b.x, b.y, 38, 0.4 + 0.1 * Math.sin(T_ * 20 + b.x)); ctx.strokeStyle = 'rgba(255,90,50,0.6)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(b.x, b.y, 12, 0, TAU); ctx.stroke(); }
     if (b.kind === 'boomer') { glow('light_01', b.color, b.x, b.y, 22, 0.4); ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.t * 18); ctx.strokeStyle = '#3a2a10'; ctx.lineWidth = 3.2 * b.r / 4; ctx.lineCap = 'round';
       const k = b.r / 4; ctx.beginPath(); ctx.moveTo(-5 * k, 3 * k); ctx.lineTo(0, -3 * k); ctx.lineTo(5 * k, 3 * k); ctx.stroke(); ctx.strokeStyle = b.color; ctx.lineWidth = 1.8 * k; ctx.stroke(); ctx.restore(); continue; }
     if (b.def && b.def.id === 'rail' && !b.child) {   // a charged rail slug: a long bright bolt that grows with the charge
@@ -2367,6 +2373,7 @@ function drawBullets() {
       ctx.strokeStyle = '#ffffff'; ctx.lineWidth = b.r * 0.8; ctx.stroke(); ctx.lineCap = 'butt'; continue; }
     glow('light_01', b.color, b.x, b.y, b.r * 6, 0.45);
     ctx.fillStyle = b.color; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.fill();
+    if (b.elem === 'shock') drawSparks(b.x, b.y, b.r);
     if (b.kind === 'bubble') { ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 0.7; ctx.stroke(); }
   }
   for (const bm of beams) {
@@ -2636,7 +2643,7 @@ function gunFires(d) {   // a plain description of what a gun shoots
   if (d.bounce) out.push(`bouncing ${d.bounce}×`); if (d.homing) out.push('homing'); if (d.chain) out.push(`chaining to ${d.chain} more`);
   if (d.split || d.splitAt) out.push('splitting'); if (d.shrapnel) out.push('with shrapnel'); if (d.charge) out.push('hold to charge'); if (d.spin) out.push('spins up');
   if (d.fireAura) out.push('in a ring of fire'); if (d.boomPath) out.push('that loop back to you'); if (d.fusion === 'hornet') out.push('fires 60% faster');
-  if (d.elem) out.push(ELEM[d.elem].name); if (d.sight) out.push('with a sight line');
+  if (d.elem) out.push(ELEM[d.elem].name); else if (d.arcane) out.push(`${Math.round(d.arcane * 100)}% Burn, Ice or Shock`); if (d.sight) out.push('with a sight line');
   return out.join(' · ');
 }
 const gunRow = (g, on) => { const d = g.def || g, dps = Math.round(gunDps(d) * (P ? playerMods().dmg : 1) * (g.mk || 1));
