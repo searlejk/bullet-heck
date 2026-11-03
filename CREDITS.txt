@@ -19,6 +19,9 @@ Camp station panels (assets/ui/):
   DungeonTileset II heart (0x72, CC0). Built by tests/make-camp-ui.py.
 guns.png rows 44-57: fused guns, made from their base guns by tests/make-fused-guns.py (pixels repainted toward one hue; outlines kept).
 
+Font: "m6x11" by Daniel Linssen - https://managore.itch.io/m6x11 - free to use with attribution (as stated on the page).
+assets/fonts/m6x11.ttf is the original file, unchanged (sha256 64697c6f...0a20).
+
 Particles: "Particle Pack" by Kenney (kenney.nl) - CC0 1.0.
 
 Music: "Exploration Theme" by cleytonkauffman - https://opengameart.org/content/exploration-theme - CC0 1.0.
