@@ -323,7 +323,7 @@ ITEMS.push(
   { id: 'coldsnap', name: 'Cold Snap', desc: 'Frozen foes take 40% more damage', mod: { frozenMul: 0.4 } },
   { id: 'capacitor', name: 'Capacitor', desc: 'Shock jumps to one more foe', mod: { chainBonus: 1 } },
   { id: 'stormrod', name: 'Storm Rod', desc: 'Some bullets Shock', mod: { shockChance: 0.18 } },
-  { id: 'powder', name: 'Black Powder', desc: 'Explosions 30% wider', mod: { blastMul: 0.3 } },
+  { id: 'powder', name: 'Black Powder', desc: 'Explosion AOE 30% increase', mod: { blastMul: 0.3 } },   // every gun explosion: grenades, rockets, mortar shells, flares, Blast fusions
   { id: 'fuse', name: 'Short Fuse', desc: 'Some bullets explode', mod: { boomChance: 0.08 } },
   { id: 'springs', name: 'Spring Loader', desc: 'Bullets bounce once more', mod: { bounce: 1 } },
   { id: 'needle', name: 'Needle Rounds', desc: 'Bullets pierce one more foe', mod: { pierce: 1 } },
@@ -1838,7 +1838,7 @@ function update(dt) {
     if (b.kind === 'orbit') { if (Math.floor(b.t * 3) !== b.hk) { b.hk = Math.floor(b.t * 3); b.hit.clear(); }
       const ring = pbul.filter(q => q.kind === 'orbit' && !q.dead), i = ring.indexOf(b), a = T_ * 7.5 + i * TAU / ring.length;
       b.x = P.x + Math.cos(a) * 26; b.y = P.y - 6 + Math.sin(a) * 26; }
-    else if (b.kind === 'mortar') { const e = Math.min(1, b.t / b.life); b.x = lerp(b.sx, b.tx, e); b.y = lerp(b.sy, b.ty, e); b.h = Math.sin(e * Math.PI) * 40; if (e >= 1) { explode(b.tx, b.ty, b.explode, b.dmg); b.dead = true; } continue; }
+    else if (b.kind === 'mortar') { const e = Math.min(1, b.t / b.life); b.x = lerp(b.sx, b.tx, e); b.y = lerp(b.sy, b.ty, e); b.h = Math.sin(e * Math.PI) * 40; if (e >= 1) { explode(b.tx, b.ty, b.explode, b.dmg, b); b.dead = true; } continue; }
     else {
       if (b.kind === 'grenade') { b.vx *= Math.pow(0.08, dt); b.vy *= Math.pow(0.08, dt); }
       if (b.kind === 'boomer' || (b.def && b.def.boomPath)) {   // out on a gentle curve while slowing, then a loop back home to the shooter
@@ -1891,7 +1891,7 @@ function update(dt) {
         damageEnemy(e, b.dmg, b.vx / 200, b.vy / 200);
         if (b.elem) applyElem(e, b.elem, b.dmg);
         if (b.chain) chainZap(e, b.chain, b.dmg * 0.6);
-        if (b.boom && rnd() < b.boom) explode(b.x, b.y, b.explode, b.dmg * 3);
+        if (b.boom && rnd() < b.boom) explode(b.x, b.y, b.explode, b.dmg * 3, b);
         if (playerMods().splitChance && rnd() < playerMods().splitChance && !b.child) spawnSplit(b, 2);
         if (b.kind === 'bubble' && b.split) { spawnSplit(b, b.split); b.dead = true; break; }
         if (b.pierce > 0) b.pierce--; else { b.dead = true; if (b.explode && b.kind !== 'flame') explode(b.x, b.y, b.explode, b.dmg, b); if (b.shrapnel) spawnSplit(b, b.shrapnel); break; }
@@ -2399,7 +2399,7 @@ function drawBullets() {
     if (b.kind === 'flame') { glow('light_01', b.color, b.x, b.y, 10 + b.t * 30, 0.8 * (1 - b.t / b.life)); continue; }
     if (b.kind === 'hole') { const gr = b.grow || 0; glow('circle_05', '#c9a8ff', b.x, b.y, 44 + 34 * gr, 0.6, T_ * 3); ctx.fillStyle = '#0b0610'; ctx.beginPath(); ctx.arc(b.x, b.y, 6 + 5 * gr, 0, TAU); ctx.fill(); glow('light_01', '#c9a8ff', b.x, b.y, 30 + 24 * gr, 0.5); continue; }
     if (b.kind === 'mortar') { ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(b.x, b.y, 4, 1.5, 0, 0, TAU); ctx.fill();
-      ctx.strokeStyle = 'rgba(255,200,120,0.4)'; ctx.beginPath(); ctx.arc(b.tx, b.ty, b.explode * (1 - b.t / b.life * 0.5), 0, TAU); ctx.stroke(); glow('light_01', b.color, b.x, b.y - b.h, 14, 0.9); continue; }
+      ctx.strokeStyle = 'rgba(255,200,120,0.4)'; ctx.beginPath(); ctx.arc(b.tx, b.ty, b.explode * (1 + playerMods().blastMul) * (1 - b.t / b.life * 0.5), 0, TAU); ctx.stroke(); /* the landing ring shows the real blast size */ glow('light_01', b.color, b.x, b.y - b.h, 14, 0.9); continue; }
     if (b.kind === 'saw') { ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.t * 20); ctx.fillStyle = '#e8eef5'; for (let k = 0; k < 6; k++) { ctx.rotate(TAU / 6); ctx.fillRect(-1, -b.r - 1.5, 2, 3); } ctx.beginPath(); ctx.arc(0, 0, b.r, 0, TAU); ctx.fill(); ctx.restore(); continue; }
     if (b.def && b.def.fireAura) { glow('light_01', '#ff4a2a', b.x, b.y, 38, 0.4 + 0.1 * Math.sin(T_ * 20 + b.x)); ctx.strokeStyle = 'rgba(255,90,50,0.6)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(b.x, b.y, 12, 0, TAU); ctx.stroke(); }
     if (b.kind === 'boomer') { glow('light_01', b.color, b.x, b.y, 22, 0.4); ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.t * 18); ctx.strokeStyle = '#3a2a10'; ctx.lineWidth = 3.2 * b.r / 4; ctx.lineCap = 'round';
