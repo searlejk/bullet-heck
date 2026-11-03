@@ -925,6 +925,7 @@ function enterFloor(f) {
 function enterRoom(r, fromDir) {
   sizeFor(r);
   room = r; ebul = []; pbul = pbul.filter(b => b.kind === 'orbit'); beams = []; enemies = []; turrets = []; decoy = null; decoyLost = null; slowT = 0; P.shieldT = 0;
+  if (fromDir) for (const g of P.guns) { g.reloadT = 0; g.mag = Math.min(magSize(g.def), g.ammo); }   // walking through a door reloads your guns
   if (fromDir) { const d = DOOR[OPP[fromDir]], [dx, dy] = DIRS[fromDir]; P.x = clamp(d.x + dx * 18, X0, X1); P.y = clamp(d.y + dy * 18, Y0, Y1); }
   else { P.x = 136; P.y = 110; }
   if (solidAt(P.x, P.y, PR + 3)) Object.assign(P, freeSpot(P.x, P.y));   // never start inside a column or crate
@@ -1189,12 +1190,18 @@ function pray(p) {   // shrine: a relic now, a curse for the rest of the run
   setBanner(CURSES[c].name, CURSES[c].desc, 2); flash = 0.4; shake = 4; tone(220, 0.5, 'sine', 0.08, 0.5);
   waves.push({ x: p.x, y: p.y - 10, r0: 6, r1: 60, life: 0.5, t: 0, color: '#d3a0ff' });
 }
-function gamble(p) {   // the gambler's chest: usually a gun or a relic, sometimes it bites
+function gamble(p) {   // the gambler's chest: usually a gun or a relic, sometimes it bites, and rarely it calls an ambush
   p.used = true; const r = rnd();
   for (let k = 0; k < 10; k++) parts.push({ x: p.x, y: p.y - 6, vx: (rnd() - 0.5) * 90, vy: -rnd() * 90, life: 0.6, t: 0, size: 8, name: 'star_06', color: '#d3a0ff', glow: 1 });
-  if (r < 0.45) addGun(rollGun(run.floor, 1)); else if (r < 0.75) addItem(rollItem());
-  else { p.mimic = true; room.cleared = false; room.mimic = true; room.waves = [[...Array(3 + Math.floor(depth() / 2))].map(() => pick(Object.keys(ENEMIES).filter(id => ENEMIES[id].min <= depth())))];
+  if (r < 0.45) { p.taken = true; room.pickups.push({ kind: 'gun', gun: rollGun(run.floor, 1), x: p.x, y: p.y }); tone(520, 0.12, 'triangle', 0.07); }   // the chest vanishes and leaves its gun on the floor
+  else if (r < 0.75) addItem(rollItem());
+  else if (r < 0.92) { p.mimic = true; room.cleared = false; room.mimic = true; room.waves = [[...Array(3 + Math.floor(depth() / 2))].map(() => pick(Object.keys(ENEMIES).filter(id => ENEMIES[id].min <= depth())))];
     room.waveI = 0; room.fightStart = run.t; spawnWave(); setBanner('A mimic!', 'Beat its friends to claim the prize', 1.6); tone(160, 0.3, 'square', 0.06, 0.5); }
+  else {   // rare: an ambush. The chest vanishes and one huge wave pours in at once
+    p.taken = true; for (let k = 0; k < 24; k++) parts.push({ x: p.x + (rnd() - 0.5) * 16, y: p.y - 6 + (rnd() - 0.5) * 10, vx: (rnd() - 0.5) * 60, vy: -rnd() * 50, life: 0.8, t: 0, size: 10, name: 'smoke_08', color: '#6a4a8a', soft: 1 });
+    const pool = Object.keys(ENEMIES).filter(id => ENEMIES[id].min <= depth());
+    room.cleared = false; room.ambush = true; room.waves = [[...Array(Math.min(16, 8 + Math.floor(depth())))].map(() => pick(pool))];
+    room.waveI = 0; room.fightStart = run.t; spawnWave(); setBanner('Ambush!', 'Survive the horde', 1.8); shake = 6; tone(120, 0.4, 'square', 0.07, 0.4); }
 }
 function freeCaptive(p) {
   p.used = true; const n = p.npc;
@@ -2066,6 +2073,7 @@ function roomCleared() {
   else if (rnd() < 0.45 + m.luck + luck + (hasMod('bounty') ? 0.2 : 0)) { const r = rnd(); room.pickups.push({ kind: r < 0.64 ? 'coin' : r < 0.86 ? 'blank' : 'key', ...spot, n: 3 }); }
   if (room.gunRoom) { room.gunRoom = false; room.pickups.push({ kind: 'chest', ...freeSpot(136, 96), gun: rollGun(run.floor, 1) }); }   // More Guns: this fight's prize is a gun
   if (room.mimic) { room.mimic = false; room.pickups.push({ kind: 'chest', ...freeSpot(136, 96), gun: rollGun(run.floor, 2) }); }   // the mimic's prize
+  if (room.ambush) { room.ambush = false; room.pickups.push({ kind: 'coin', ...freeSpot(150, 104), n: 12 }); run.embers += 3; }   // surviving an ambush pays
   run.embers += 1;
 }
 function collect(p) {
