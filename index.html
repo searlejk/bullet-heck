@@ -127,7 +127,8 @@ window.GUN_SHEET = {"cell": 48, "dirs": 16, "rows": {"rusty": 0, "twin_s": 1, "s
 const W = 960, H = 600, S = 3, T = 16, VW = 17, VH = 11, OX = (W - VW * T * S) / 2, OY = 64;   // VW x VH tiles fit on screen
 let RW = VW, RH = VH, X0, X1, Y0, Y1, camX = 0, camY = 0;   // the current room's size in tiles, its walkable box in art pixels, and the camera
 const CAMP_W = VW + 2, CAMP_H = VH;   // the Camp is one tile wider on each side than a dungeon room
-const DEBUG_FUSION_ON_LEVEL_2 = true;   // DEBUG: every level 2 has a fusion room. TODO before release: set false or delete (owner's note)   // the Camp is bigger than a dungeon room; the camera follows you around it
+const PUBLIC_BUILD = true;   // true in the GitHub Pages build (tests/package-gunlight.py): debug tools are hidden there
+const DEBUG_FUSION_ON_LEVEL_2 = !PUBLIC_BUILD;   // DEBUG: every level 2 has a fusion room. TODO before release: set false or delete (owner's note)   // the Camp is bigger than a dungeon room; the camera follows you around it
 const PR = 3, ZONE_LEN = 4, TARGET_PASS = 0.6, TAU = Math.PI * 2;
 // The descent never ends. Each zone is three floors and a guardian floor; the three zone looks cycle (Keep,
 // Crypts, Ember Depths, then the Keep again), and every full cycle adds a standing floor rule. Difficulty
@@ -2686,8 +2687,8 @@ function renderPanel() {
       <button class="pbtn big" data-act="settings">Settings</button>
       <button class="pbtn big" data-act="almanac">Almanac</button>
       <button class="pbtn big" data-act="fusiontree">Fusion tree</button>
-      <button class="pbtn big" data-act="gunlab">Bot gun test</button>
-      <button class="pbtn big ${debugAll ? '' : 'ghost'}" data-act="debugall">Debug: show all guns ${debugAll ? 'on' : 'off'}</button>
+      ${PUBLIC_BUILD ? '' : `<button class="pbtn big" data-act="gunlab">Bot gun test</button>
+      <button class="pbtn big ${debugAll ? '' : 'ghost'}" data-act="debugall">Debug: show all guns ${debugAll ? 'on' : 'off'}</button>`}
       <button class="pbtn big" data-act="watchai">${inRun ? 'Watch AI play (ends this run)' : 'Watch AI play'}</button>
       <button class="pbtn big ${save.sound ? '' : 'ghost'}" data-act="sound">Sound: ${save.sound ? 'On' : 'Off'}</button></div>
       <div class="pside">${pauseRight(inRun)}</div></div>`;
