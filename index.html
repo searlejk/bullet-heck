@@ -519,7 +519,7 @@ if (!BOT_MODE) try { const main = localStorage.getItem(SAVE_KEY), back = localSt
 migrateSave();
 // Watch AI play: the test bot (tests/gunlight-bot.js) plays its own runs at 1x, 2x or 4x. Your save is set aside
 // while it plays and restored exactly when you stop, so its runs never count as yours.
-let aiWatch = false, aiSpeed = 1, aiSave = null;
+let aiWatch = false, aiSpeed = 1, aiSave = null, aiFrom = null;   // aiFrom: where you were when the AI took over ('run', 'tutorial' or 'camp')
 function migrateSave() {   // batch 2 rebuilt the Armory lines; keep what an older save had paid for
   const u = save.gunUps || (save.gunUps = {});
   if (u.reload || u.mag) { u.handling = Math.min(3, Math.max(u.handling || 0, Math.ceil(((u.reload || 0) / 4 + (u.mag || 0) / 3) / 2 * 3))); delete u.reload; delete u.mag; }
@@ -2552,7 +2552,7 @@ function startRoll() {
 const KEYMAP = { arrowup: 1, arrowdown: 1, arrowleft: 1, arrowright: 1 };
 addEventListener('keydown', e => {
   const k = e.key.toLowerCase(); ensureAudio();
-  if (k === 'escape' || k === 'p') { if (state === 'play') toggleMenu(); return; }
+  if (k === 'escape' || k === 'p') { if (state === 'play' || (aiWatch && state !== 'dead')) toggleMenu(); return; }
   if (menuOpen) { if ((k === 'enter' || k === ' ') && view === 'summary') { e.preventDefault(); restart(); } return; }
   if (e.metaKey || e.ctrlKey) return;
   input.keys[k] = true;
@@ -2689,7 +2689,7 @@ function renderPanel() {
       <button class="pbtn big" data-act="fusiontree">Fusion tree</button>
       ${PUBLIC_BUILD ? '' : `<button class="pbtn big" data-act="gunlab">Bot gun test</button>
       <button class="pbtn big ${debugAll ? '' : 'ghost'}" data-act="debugall">Debug: show all guns ${debugAll ? 'on' : 'off'}</button>`}
-      <button class="pbtn big" data-act="watchai">${inRun ? 'Watch AI play (ends this run)' : 'Watch AI play'}</button>
+      ${aiWatch ? `<button class="pbtn big" data-act="stopai">Stop watching: back to your ${aiFrom === 'run' ? 'run' : aiFrom === 'tutorial' ? 'training' : 'Camp'}</button>` : '<button class="pbtn big" data-act="watchai">Watch AI play</button>'}
       <button class="pbtn big ${save.sound ? '' : 'ghost'}" data-act="sound">Sound: ${save.sound ? 'On' : 'Off'}</button></div>
       <div class="pside">${pauseRight(inRun)}</div></div>`;
     paintGunIcons(p);
@@ -2710,7 +2710,7 @@ function renderPanel() {
       <div class="opt-row"><span>Progress</span><span class="st-note" style="margin:0">${cloud.on ? 'Saved to your claude.ai account and this browser' : 'Saved in this browser'}</span></div>
       <!--savefile--><div class="opt-row"><span>Save file</span><span><button class="pbtn" data-act="savefile">Save to file</button> <button class="pbtn" data-act="loadfile">Load from file</button></span></div><!--/savefile-->
       <div class="opt-row"><span>Learn the controls</span><button class="pbtn" data-act="tutorial">Play tutorial</button></div>
-      <div class="pause-links"><button class="pbtn ghost" data-act="stats">Player stats</button><button class="pbtn ghost" data-act="credits">Controls &amp; credits</button>${inRun ? '<button class="pbtn ghost" data-act="abandon">Back to Camp</button>' : ''}</div>
+      <div class="pause-links"><button class="pbtn ghost" data-act="stats">Player stats</button><button class="pbtn ghost" data-act="credits">Controls &amp; credits</button>${inRun && !aiWatch ? '<button class="pbtn ghost" data-act="abandon">Back to Camp</button>' : ''}</div>
       <button class="pbtn big" data-act="tomenu">Back</button>`;
   } else if (view === 'gunlab') {   // debug: pick a gun and watch the bot take it through the lab course
     p.className = 'panel station';
@@ -2735,7 +2735,7 @@ function renderPanel() {
     const a = b.dataset.act;
     if (a === 'resume') toggleMenu(false);
     // two-tap confirms inside the panel (browser confirm() dialogs are blocked when the game is shared as a page)
-    if (a === 'tutorial') { startTutorial(); return; }
+    if (a === 'tutorial') { if (aiWatch) stopWatchAI(); startTutorial(); return; }
     if (a === 'abandon' && tut) { tut = null; toggleMenu(false); enterCamp(false); return; }
     if (a === 'abandon') { if (b.dataset.armed) { run.killer = 'giving up'; toggleMenu(false); die(); } else { b.dataset.armed = 1; b.textContent = 'Tap again: this run ends'; } }
     if (a === 'again') restart();
@@ -2749,12 +2749,13 @@ function renderPanel() {
     if (a === 'almanac') { view = 'almanac'; renderPanel(); }
     if (a === 'fusiontree') { view = 'fusiontree'; renderPanel(); }
     if (a === 'debugall') { debugAll = !debugAll; renderPanel(); }
-    if (a === 'watchai') { if (inRun && !b.dataset.armed) { b.dataset.armed = 1; b.textContent = 'Tap again: leave this run'; } else startWatchAI(); }
+    if (a === 'watchai') startWatchAI();
+    if (a === 'stopai') stopWatchAI();
     if (a === 'back') { view = state === 'play' ? 'settings' : 'summary'; if (view === 'summary') showSummary(state === 'returned'); else renderPanel(); }
     if (a === 'export') { const blob = new Blob([JSON.stringify(save, null, 2)], { type: 'application/json' }); const u = URL.createObjectURL(blob), l = document.createElement('a'); l.href = u; l.download = 'bullet-heck-save.json'; l.click(); URL.revokeObjectURL(u); }
     if (a === 'reset') { if (b.dataset.armed) { resetProgress(); } else { b.dataset.armed = 1; b.textContent = 'Tap again to erase everything'; } }
-    if (a === 'savefile') { const blob = new Blob([JSON.stringify(save, null, 2)], { type: 'application/json' }), u = URL.createObjectURL(blob), l = document.createElement('a'); l.href = u; l.download = 'bullet-heck-save.json'; document.body.appendChild(l); l.click(); l.remove(); setTimeout(() => URL.revokeObjectURL(u), 1000); }
-    if (a === 'loadfile') loadSaveFile();
+    if (a === 'savefile') { const blob = new Blob([aiWatch ? JSON.stringify(JSON.parse(aiSave), null, 2) : JSON.stringify(save, null, 2)], { type: 'application/json' }), u = URL.createObjectURL(blob), l = document.createElement('a'); l.href = u; l.download = 'bullet-heck-save.json'; document.body.appendChild(l); l.click(); l.remove(); setTimeout(() => URL.revokeObjectURL(u), 1000); }
+    if (a === 'loadfile') { if (aiWatch) stopWatchAI(); loadSaveFile(); }
   });
 }
 function showSummary(won) {
@@ -2816,7 +2817,7 @@ function saveRun() {
     localStorage.setItem(RUN_KEY, JSON.stringify({ v: 1, p, run, rooms: rs, room: idx.get(room), state }));
   } catch (e) {}
 }
-function clearRunSave() { try { localStorage.removeItem(RUN_KEY); } catch (e) {} }
+function clearRunSave() { if (aiWatch) return; try { localStorage.removeItem(RUN_KEY); } catch (e) {} }
 function restoreRun() {
   try {
     const d = JSON.parse(localStorage.getItem(RUN_KEY)); if (!d || d.v !== 1 || !HEROES[d.p.hero]) return false;
@@ -2882,23 +2883,27 @@ function loadBot(then) {   // the AI player lives in tests/gunlight-bot.js; load
 }
 function startWatchAI() {
   toggleMenu(false);
+  if (!aiWatch) { aiFrom = tut ? 'tutorial' : run && !run.camp && !lab ? 'run' : 'camp'; if (aiFrom === 'run') saveRun(); }   // your run is saved as it stands, and comes back when you stop
   loadBot(() => {
     if (!aiWatch) aiSave = JSON.stringify(save);   // set your save aside
     aiWatch = true; aiSpeed = aiSpeed || 1; input.auto = false; humanBot.reset(); window.botStep = humanBot.botStep;
-    state = 'play'; newRun(); renderAiBar(); setBanner('The AI is playing', 'Your save is untouched. Stop any time', 2.2);
+    state = 'play'; newRun(); renderAiBar(); setBanner('The AI is playing', `Your ${aiFrom === 'run' ? 'run and ' : ''}progress are kept. Press Stop or Esc to go back`, 2.6);
   });
 }
 function stopWatchAI() {
   lab = null; rnd = Math.random;
   aiWatch = false; window.botStep = null; Object.keys(save).forEach(k => delete save[k]); Object.assign(save, JSON.parse(aiSave)); aiSave = null;   // put your save back exactly
   input.keys = {}; input.fire = false; input.touchMove = null; input.touchAim = null; input.auto = false;
-  renderAiBar(); state = 'play'; enterCamp(false);
+  renderAiBar(); state = 'play'; toggleMenu(false); const from = aiFrom; aiFrom = null; tut = null;
+  if (from === 'run' && restoreRun()) setBanner('Back to your run', `Level ${run.floor}`, 2);   // exactly where you left it
+  else if (from === 'tutorial') startTutorial();
+  else enterCamp(false);
 }
 function renderAiBar() {   // the bar at the top while the AI plays: speed and stop
   let bar = $('aiBar'); if (!bar) { bar = document.createElement('div'); bar.id = 'aiBar'; document.body.appendChild(bar); }
   bar.classList.toggle('hidden', !aiWatch); const badge = $('botBadge'); if (badge) badge.classList.toggle('hidden', !aiWatch);
   if (!aiWatch) return;
-  bar.innerHTML = `<span>AI playing</span>${[1, 2, 4].map(n => `<button class="pbtn ${aiSpeed === n ? 'on' : 'ghost'}" data-speed="${n}">${n}×</button>`).join('')}<button class="pbtn" data-stop>Stop</button>`;
+  bar.innerHTML = `<span>AI playing</span>${[1, 2, 4].map(n => `<button class="pbtn ${aiSpeed === n ? 'on' : 'ghost'}" data-speed="${n}">${n}×</button>`).join('')}<button class="pbtn" data-stop>Stop: back to your ${aiFrom === 'run' ? 'run' : aiFrom === 'tutorial' ? 'training' : 'Camp'}</button>`;
   bar.querySelectorAll('[data-speed]').forEach(b => b.onclick = () => { aiSpeed = +b.dataset.speed; renderAiBar(); });
   bar.querySelector('[data-stop]').onclick = stopWatchAI;
 }
