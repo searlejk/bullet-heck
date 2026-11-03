@@ -1,0 +1,25 @@
+Bullet Heck: credits
+
+Dungeon art: "16x16 DungeonTileset II" v1.7 by 0x72 - https://0x72.itch.io/dungeontileset-ii
+License: CC0 1.0 (public domain). dungeon.png is the pack's combined atlas; atlas.js lists its sprite rectangles (from tile_list_v1.7).
+
+Guns (guns.png, baked from the originals with 16 pre-rotated directions and a #222222 outline added):
+- "Tiny gun icons (16x16)" by congusbongus - https://opengameart.org/content/tiny-gun-icons-16x16 - CC0 1.0.
+- "Eradication Wars Weapon Sprite Pack" (Tiny Bonus micro weapons) by Reactorcore - https://reactorcoregames.com -
+  CC-BY 4.0 per the pack's info file (the OpenGameArt page lists CC0); credited here.
+guns.js lists which gun uses which row.
+
+chest_blue.png: the DungeonTileset II chest (0x72, CC0) with its four wood colours repainted blue; gold trim and outline unchanged.
+skull_purple.png: the DungeonTileset II skull (0x72, CC0) with its two bone colours repainted purple, for shrines.
+
+Camp station panels (assets/ui/):
+- frame.png, btn.png, btn_hover.png, btn_off.png: cut from "Golden UI" by Buch - https://opengameart.org/content/golden-ui - CC0 1.0.
+  The panel frame was reassembled from the sheet's split pieces and its grey interior darkened to the game's background.
+- icons.png: 16x16 icons drawn for this game in the DawnBringer 16 palette (the Golden UI palette); the hearts are the
+  DungeonTileset II heart (0x72, CC0). Built by tests/make-camp-ui.py.
+guns.png rows 44-57: fused guns, made from their base guns by tests/make-fused-guns.py (pixels repainted toward one hue; outlines kept).
+
+Particles: "Particle Pack" by Kenney (kenney.nl) - CC0 1.0.
+
+Music: "Exploration Theme" by cleytonkauffman - https://opengameart.org/content/exploration-theme - CC0 1.0.
+Edited for this game: +4 dB gain only.
