@@ -128,7 +128,7 @@ const W = 960, H = 600, S = 3, T = 16, VW = 17, VH = 11, OX = (W - VW * T * S) /
 let RW = VW, RH = VH, X0, X1, Y0, Y1, camX = 0, camY = 0;   // the current room's size in tiles, its walkable box in art pixels, and the camera
 const CAMP_W = VW + 2, CAMP_H = VH;   // the Camp is one tile wider on each side than a dungeon room
 const PUBLIC_BUILD = true;   // true in the GitHub Pages build (tests/package-gunlight.py): debug tools are hidden there
-const DEBUG_FUSION_ON_LEVEL_2 = !PUBLIC_BUILD;   // DEBUG: every level 2 has a fusion room. TODO before release: set false or delete (owner's note)   // the Camp is bigger than a dungeon room; the camera follows you around it
+const DEBUG_FUSION_LEVEL = PUBLIC_BUILD ? 0 : 5;   // DEBUG: every level 5 has a fusion room (0 = off). TODO before release: set false or delete (owner's note)   // the Camp is bigger than a dungeon room; the camera follows you around it
 const PR = 3, ZONE_LEN = 4, TARGET_PASS = 0.6, TAU = Math.PI * 2;
 // The descent never ends. Each zone is three floors and a guardian floor; the three zone looks cycle (Keep,
 // Crypts, Ember Depths, then the Keep again), and every full cycle adds a standing floor rule. Difficulty
@@ -764,7 +764,7 @@ function genFloor(f, rng, flavour) {
   if (flavour === 'shrine') req.push('event:shrine');
   if (f >= 2 && rng() < 0.4) opt.unshift('event:' + pick(['gamble', 'rescue', 'rescue', 'merchant']));   // a stranger, a gamble or a rescue may turn up on any floor
   if (f >= 2 && rng() < 0.55) opt.push('vault');
-  if (f === 2 && DEBUG_FUSION_ON_LEVEL_2) req.push('fusion');   // TODO before release: remove (see DEBUG_FUSION_ON_LEVEL_2)
+  if (f === DEBUG_FUSION_LEVEL) req.push('fusion');   // TODO before release: remove (see DEBUG_FUSION_LEVEL)
   else if (f >= 2 && rng() < 0.3) opt.unshift('fusion');   // rare: the only place guns can be fused
   for (let attempt = 0; attempt < 300; attempt++) {
     const specials = req.concat(opt.slice(0, Math.max(0, opt.length - Math.floor(attempt / 80))));
@@ -1451,12 +1451,18 @@ function fireBeam(g, def, m, dt, tu) {
   if (tu) return;
   run.shots += dt * 2; if (T_ - lastShotSfx > 0.12) { lastShotSfx = T_; tone(220 + rnd() * 20, 0.12, 'sine', 0.02); }
 }
-function gunUpdate(dt, trigger) {
+function tickReload(g, dt) {   // returns true while the gun is still reloading
+  if (!(g.reloadT > 0)) return false;
+  g.reloadT -= dt; if (g.reloadT <= 0) { g.reloadT = 0; g.mag = Math.min(magSize(g.def), g.ammo); tone(360, 0.05, 'square', 0.025); return false; }
+  return true;
+}
+function gunUpdate(dt, trigger, foesUp) {
   const g = curGun(); if (!g) return;
   const def = g.def, m = playerMods();
   g.cd -= dt;
-  if (g.reloadT > 0) { g.reloadT -= dt; if (g.reloadT <= 0) { g.mag = Math.min(magSize(def), g.ammo); tone(360, 0.05, 'square', 0.025); } return; }
+  if (tickReload(g, dt)) return;
   if (g.mag <= 0) { if (g.ammo > 0) startReload(g); else switchToLoaded(); return; }
+  if (!trigger && !foesUp && g.mag < Math.min(magSize(def), g.ammo)) { startReload(g); return; }   // the room is clear and you aren't firing: top the magazine up
   if (def.spin) g.spin = trigger ? Math.min(1, g.spin + dt / def.spin) : Math.max(0, g.spin - dt * 2);
   if (def.charge) {
     if (trigger) { g.charge = Math.min(def.charge, g.charge + dt); return; }
@@ -1791,7 +1797,7 @@ function update(dt) {
   else P.aim = Math.atan2(input.my - (P.y - 6), input.mx - P.x);
   P.face = Math.cos(P.aim) < 0 ? -1 : 1;
   if (trig) hintDone('move');
-  if (!P.roll) gunUpdate(dt, trig);
+  if (!P.roll) gunUpdate(dt, trig, foesUp); else { const g = curGun(); if (g) tickReload(g, dt); }   // a reload keeps going through a roll
 
   // ---- player bullets ----
   for (const b of pbul) {
