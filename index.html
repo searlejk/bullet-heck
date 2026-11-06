@@ -72,16 +72,18 @@
   .opt-row .pbtn { margin-top:2px; min-width:110px; }
   .pause-links { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
   .panel.station.pause.wide { width:min(1120px, calc(100% - 16px)); }
-  .pause3 { display:grid; grid-template-columns:minmax(0, 1fr) 240px minmax(0, 1.25fr); gap:16px; align-items:start; }
-  .tree { position:relative; width:min(440px, 100%); aspect-ratio:1; margin:0 auto; } .tree svg { position:absolute; inset:0; width:100%; height:100%; }
+  .pause3 { display:grid; grid-template-columns:minmax(0, 0.85fr) 220px minmax(0, 1.5fr); gap:16px; align-items:start; }
+  .tree { position:relative; width:min(540px, 100%, 56vh); aspect-ratio:1; margin:0 auto; } .tree svg { position:absolute; inset:0; width:100%; height:100%; }
   .tnode { position:absolute; width:28px; height:28px; margin:-14px 0 0 -14px; padding:0; display:flex; align-items:center; justify-content:center; background:#1e1824; border:2px solid #4a3a4e; cursor:pointer; image-rendering:pixelated; }
   .tnode .ico { opacity:0.35; } .tnode .tc { position:absolute; right:-6px; bottom:-7px; font-style:normal; font-size:10px; color:#e0d6cc; background:#0f0b12; padding:0 2px; line-height:12px; }
   .tnode.cap { width:38px; height:38px; margin:-19px 0 0 -19px; }
+  .tnode.x { border-radius:0; border-style:solid; border-color:#4a3a4e; transform:rotate(45deg); } .tnode.x .ico { transform:rotate(-45deg); } .tnode.x .tc { transform:rotate(-45deg); }
+  .tnode.x.got { border-color:var(--c); background:linear-gradient(135deg, color-mix(in srgb, var(--c) 35%, #1e1824) 50%, color-mix(in srgb, var(--c2) 35%, #1e1824) 50%); } .tnode.x.can { border-color:#ffe39a; }
   .tnode.got { border-color:var(--c); background:color-mix(in srgb, var(--c) 30%, #1e1824); } .tnode.got .ico { opacity:1; }
   .tnode.next .ico { opacity:0.7; } .tnode.can { border-color:var(--c); animation:tpulse 0.9s steps(2) infinite; } .tnode.can .ico { opacity:1; }
   @keyframes tpulse { 50% { box-shadow:0 0 0 3px #ffe39a; } }
   .tcore { position:absolute; left:50%; top:50%; transform:translate(-50%, -50%); width:54px; height:54px; display:flex; align-items:center; justify-content:center; background:#2a2130; border:3px solid #dad45e; }
-  .tcore canvas { max-width:50px !important; max-height:50px !important; width:auto; height:auto; } .tinfo { min-height:62px; margin:6px 0; padding:6px 8px; border:2px solid #442434; background:#2a2130; font-size:13px; color:#e0d6cc; line-height:1.4; } .tinfo small { color:#b7ada4; }
+  .tcore canvas { max-width:50px !important; max-height:50px !important; width:auto; height:auto; } .tinfo { height:78px; overflow:hidden; box-sizing:border-box; margin:6px 0; padding:6px 8px; border:2px solid #442434; background:#2a2130; font-size:13px; color:#e0d6cc; line-height:1.4; } .tinfo small { color:#b7ada4; }
   .ttabs { gap:6px; margin-bottom:4px; flex-wrap:wrap; }
   @media (max-width:860px) { .pause3 { grid-template-columns:minmax(0, 1fr); } .pause3 .pmid { order:-1; } }
   .pside h3 { margin:6px 0 6px; } .pgun { display:flex; gap:8px; align-items:center; padding:5px 7px; border:2px solid #442434; background:#2a2130; margin-bottom:5px; }
@@ -435,7 +437,7 @@ const CURSES = {
 const PACTS = {   // switched on at the Pact stone in the Camp (opens at depth 9); each adds +15% embers and a pact level
   cinders:  { name: 'Cinders', desc: 'Lava vents on every floor', icon: 'firestorm' },
   pairs:    { name: 'Pairs', desc: 'Elites always come in pairs', icon: 'sword' },
-  hunger:   { name: 'Hunger', desc: 'No hearts in shops; wells heal half', icon: 'heart' },
+  hunger:   { name: 'Hunger', desc: 'Wells heal half, and fights never drop hearts', icon: 'heart' },
   darkness: { name: 'Darkness', desc: 'Every room is dim beyond your lantern', icon: 'book' },
   iron:     { name: 'Iron', desc: 'Foes grow a shield the first time they drop below half', icon: 'chain' },
   haste:    { name: 'Haste', desc: 'Enemy bullets 15% faster', icon: 'up_bspeed' },
@@ -1306,7 +1308,7 @@ function freeCaptive(p) {
   p.used = true; const n = p.npc;
   if (n.id !== 'stranger' && !save.rescued.includes(n.id)) { save.rescued.push(n.id); if (n.id === 'archivist') questProgress('combos', Object.keys(save.reactSeen || {}).length, true); persist(); setBanner(`Rescued ${n.name}`, 'They will wait for you at the Camp', 2.4); }
   else setBanner('Rescued a lost adventurer', 'They leave you a gift', 2);
-  room.pickups.push(rnd() < 0.5 ? { kind: 'heart', ...freeSpot(136, 104) } : { kind: 'coin', ...freeSpot(136, 104), n: 8 });
+  room.pickups.push(rnd() < 0.2 ? { kind: 'heart', ...freeSpot(136, 104) } : { kind: 'coin', ...freeSpot(136, 104), n: 8 });
   run.embers += 5; tone(523, 0.2, 'triangle', 0.08); setTimeout(() => tone(784, 0.3, 'triangle', 0.07), 120);
 }
 // a bomb that lands by a cracked wall breaks it open, revealing the secret room behind
@@ -1350,7 +1352,7 @@ function stockShop(r) {
   const g = rollGun(run.floor), m = priceMul(run.floor) * (hasMod('greed') ? 1.4 : 1), price = n => Math.max(3, Math.round(n * m));
   const gp = { D: 18, C: 28, B: 40, A: 55, S: 75 }[GUNS[g].tier];
   r.pickups.push({ kind: 'gun', gun: g, x: 80, y: 100, price: price(gp) }, rnd() < 0.3 ? { kind: 'active', active: pick(Object.keys(ACTIVES)), x: 120, y: 100, price: price(22) } : { kind: 'item', item: rollItem(), x: 120, y: 100, price: price(26) },
-    pactOn('hunger') ? { kind: 'blank', x: 160, y: 100, price: price(10) } : { kind: 'heart', x: 160, y: 100, price: price(12) }, rnd() < 0.4 ? { kind: 'key', x: 200, y: 100, price: price(10) } : { kind: 'blank', x: 200, y: 100, price: price(10) },
+    { kind: 'blank', x: 160, y: 100, price: price(10) },   /* shops no longer sell hearts (2026-11-06) */ rnd() < 0.4 ? { kind: 'key', x: 200, y: 100, price: price(10) } : { kind: 'blank', x: 200, y: 100, price: price(10) },
     { kind: 'rank', x: 236, y: 100, price: Math.round((30 + 14 * Math.max(0, ...P.guns.map(q => q.rank || 0))) * Math.max(0.7, priceMul(run.floor))) });
   if (P.hero.rebomb) r.pickups.forEach(q => { if (q.kind === 'blank' && q.price) q.kind = 'key'; });   // no bombs for sale to the Dwarf   // a Whetstone: +1 rank, dearer as your guns climb
 }
@@ -1361,7 +1363,7 @@ const MAX_GUNS = 2;
 // Gun ranks (per run): scrap a gun you don't want (hold E on it), buy a Whetstone, or find one, and the gun in your
 // hand ranks up. Each rank is +6% damage; some ranks add an ability instead of more bullets.
 const RANK_MAX = 15, RANK_TOP = 40, RANK_PERKS = { 2: 'Pierces one more foe', 4: 'Every 5th shot is a power shot', 6: 'Shots burst on impact', 8: '+1 bullet per shot', 10: 'Hits arc to a nearby foe', 12: 'Shots carry a random element', 15: 'Every 3rd shot is a power shot' };
-let treeGun = 0;   // which of your guns the Esc screen's skill tree shows
+let treeGun = 0, treeFromStar = false;   // which of your guns the Esc screen's skill tree shows
 const nextPerk = r => { const k = Object.keys(RANK_PERKS).map(Number).find(n => n > r); return k ? `\u2605${k}: ${RANK_PERKS[k]}` : 'Overcharge: +3% damage per rank'; };   // past \u260515 ranks keep coming as overcharge
 // The gun skill tree (Esc screen, right side): the same five paths for every gun. Each star a gun earns is a point to
 // spend; the first two steps of a path cost 1, the last three cost 2, and the further out a step is the stronger it is.
@@ -1381,29 +1383,41 @@ const TREE = [
     ['20% of shots burst on impact (explosive guns: +15% blast damage)'], ['45% of shots burst'], ['Every shot bursts on impact'], ['Bursts are bigger'], ['Bursts are bigger still and hit 20% harder'] ] },
 ];
 const TREE_COST = [1, 1, 2, 2, 2];
+// Cross-path steps sit between two neighbouring paths and need step 3 of both (2 stars each). With them the tree holds
+// 50 stars of upgrades but a gun tops out at 40, so a full gun still has to choose.
+const TREE_X = [
+  { id: 'x_ps', a: 'pow', b: 'spd', name: 'Overdrive', icon: 'sword', desc: 'Power shots come one shot sooner' },
+  { id: 'x_sc', a: 'spd', b: 'prc', name: 'Ricochet', icon: 'up_bspeed', desc: 'Bullets bounce off walls once more, +10% fire rate' },
+  { id: 'x_ce', a: 'prc', b: 'elm', name: 'Conductor', icon: 'shatter', desc: 'Arcs jump to one more foe, elemental hits +15% damage' },
+  { id: 'x_eb', a: 'elm', b: 'bst', name: 'Volatile', icon: 'firestorm', desc: 'Every burst carries an element, bursts 15% bigger' },
+  { id: 'x_bp', a: 'bst', b: 'pow', name: 'Heavy Rounds', icon: 'up_dmg', desc: '+15% damage, and shots knock foes back much harder' },
+], X_COST = 2, X_NEED = 3;
 const treeLv = (g, id) => (g && g.tree && g.tree[id]) || 0;
-const treeSpent = g => TREE.reduce((a, br) => a + TREE_COST.slice(0, treeLv(g, br.id)).reduce((x, y) => x + y, 0), 0);
+const xOpen = (g, x) => treeLv(g, x.a) >= X_NEED && treeLv(g, x.b) >= X_NEED;
+const treeSpent = g => TREE.reduce((a, br) => a + TREE_COST.slice(0, treeLv(g, br.id)).reduce((x, y) => x + y, 0), 0) + TREE_X.reduce((a, x) => a + (treeLv(g, x.id) ? X_COST : 0), 0);
 const treePoints = g => g ? Math.max(0, (g.rank || 0) - treeSpent(g)) : 0;
 // Tree numbers, balanced with a damage-per-second range (2026-11-06): with 8 stars in one path every path lands near
 // 3x damage on a single target; Precision and Blast pay extra against groups instead of more single-target damage.
 let TT = { pow: [0.15, 0.15, 0.25], spdRate: [0.15, 0.1, 0.2, 0.25], extraBulletDmg: 0.7, prcDmg: 1.15, elem: [0, 0.2, 0.35, 0.35, 0.55, 1], elemDmg: [0.35, 0.35],
   burst: [0, 0.2, 0.45, 1, 1, 1], burstR: [10, 10, 10, 10, 12, 14], prcOwn: [1, 1, 1.2, 1.4, 1.7, 2.1], elemOwn: 1.25, blastCap: 1.2, blastOwn: [1, 1.15, 1.3, 1.5, 1.7, 1.9] };
 function treeStats(g) {   // everything the tree adds to one gun's shots
-  const L = id => treeLv(g, id), p = L('pow'), s = L('spd'), c = L('prc'), e = L('elm'), b = L('bst'), own = !!(g && g.def && g.def.explode);
-  return { dmg: (1 + TT.pow[0] * (p >= 1) + TT.pow[1] * (p >= 2) + TT.pow[2] * (p >= 4)) * (c >= 2 ? TT.prcDmg : 1) * (b >= 5 ? TT.blastCap : 1) * (own ? TT.blastOwn[b] * TT.prcOwn[c] / (c >= 2 ? TT.prcDmg : 1) : 1),
-    powerEvery: p >= 5 ? 3 : p >= 3 ? 5 : 0, powerMul: p >= 5 ? 3 : 2.5,
-    rate: 1 + TT.spdRate[0] * (s >= 1) + TT.spdRate[1] * (s >= 2) + TT.spdRate[2] * (s >= 3) + TT.spdRate[3] * (s >= 5), reload: (s >= 2 ? 0.75 : 1) * (s >= 5 ? 0.7 : 1), pellets: s >= 4 ? 1 : 0,
-    pierce: (c >= 1) + (c >= 5), bspeed: c >= 2 && !own ? 1.25 : 1, spread: c >= 2 ? 0.5 : 1, chain: c >= 3 ? 1 : 0, bounce: c >= 4 ? 1 : 0, homing: c >= 5 ? 1 : 0,
-    elem: TT.elem[e], elemDmg: (1 + TT.elemDmg[0] * (e >= 3) + TT.elemDmg[1] * (e >= 5)) * (own && e >= 3 ? TT.elemOwn : 1),
-    burst: own ? 0 : TT.burst[b], burstR: TT.burstR[b], blastGrow: own ? [1, 1, 1, 1, 1.15, 1.3][b] : 1 };   // a gun that already explodes gets harder, then bigger, blasts instead
+  const L = id => treeLv(g, id), p = L('pow'), s = L('spd'), c = L('prc'), e = L('elm'), b = L('bst'), own = !!(g && g.def && g.def.explode), X = id => !!L(id);
+  return { dmg: (X('x_bp') ? 1.15 : 1) * (1 + TT.pow[0] * (p >= 1) + TT.pow[1] * (p >= 2) + TT.pow[2] * (p >= 4)) * (c >= 2 ? TT.prcDmg : 1) * (b >= 5 ? TT.blastCap : 1) * (own ? TT.blastOwn[b] * TT.prcOwn[c] / (c >= 2 ? TT.prcDmg : 1) : 1),
+    powerEvery: (p >= 5 ? 3 : p >= 3 ? 5 : 0) - (p >= 3 && X('x_ps') ? 1 : 0), powerMul: p >= 5 ? 3 : 2.5,
+    rate: (X('x_sc') ? 1.1 : 1) * (1 + TT.spdRate[0] * (s >= 1) + TT.spdRate[1] * (s >= 2) + TT.spdRate[2] * (s >= 3) + TT.spdRate[3] * (s >= 5)), reload: (s >= 2 ? 0.75 : 1) * (s >= 5 ? 0.7 : 1), pellets: s >= 4 ? 1 : 0,
+    pierce: (c >= 1) + (c >= 5), bspeed: c >= 2 && !own ? 1.25 : 1, spread: c >= 2 ? 0.5 : 1, chain: (c >= 3 ? 1 : 0) + (X('x_ce') ? 1 : 0), bounce: (c >= 4 ? 1 : 0) + (X('x_sc') ? 1 : 0), homing: c >= 5 ? 1 : 0,
+    elem: TT.elem[e], elemDmg: (1 + TT.elemDmg[0] * (e >= 3) + TT.elemDmg[1] * (e >= 5)) * (own && e >= 3 ? TT.elemOwn : 1) * (X('x_ce') ? 1.15 : 1), burstElem: X('x_eb'), knock: X('x_bp') ? 2.5 : 1,
+    burst: own ? 0 : TT.burst[b], burstR: TT.burstR[b] * (X('x_eb') ? 1.15 : 1), blastGrow: (own ? [1, 1, 1, 1, 1.15, 1.3][b] : 1) * (own && X('x_eb') ? 1.15 : 1) };   // a gun that already explodes gets harder, then bigger, blasts instead
 }
-function learnNode(g, id) {   // spend points on the next step of a path
+function learnNode(g, id) {   // spend points on the next step of a path (or a cross-path step)
+  const X = TREE_X.find(x => x.id === id);
+  if (X) { if (treeLv(g, id) || !xOpen(g, X) || treePoints(g) < X_COST) return false; (g.tree || (g.tree = {}))[id] = 1; tone(990, 0.12, 'triangle', 0.07); return true; }
   const lv = treeLv(g, id); if (lv >= 5 || treePoints(g) < TREE_COST[lv]) return false;
   (g.tree || (g.tree = {}))[id] = lv + 1; tone(660 + lv * 110, 0.1, 'triangle', 0.07); return true;
 }
 function reskill(g) { if (!g || !treeSpent(g) || (g.rank || 0) < 1) return false; g.tree = {}; g.rank -= 1; g.xp = 0; tone(300, 0.15, 'triangle', 0.06); return true; }   // costs one star
 function autoSkill(g) {   // the bot and Watch AI: commit like a player would (Power to its power shots, then Speed, then the rest)
-  const plan = ['pow', 'pow', 'spd', 'pow', 'spd', 'spd', 'spd', 'prc', 'pow', 'prc', 'bst', 'bst', 'prc', 'bst', 'pow', 'spd', 'prc', 'bst', 'prc', 'bst', 'elm', 'elm', 'elm', 'elm', 'elm'];
+  const plan = ['pow', 'pow', 'spd', 'pow', 'spd', 'spd', 'x_ps', 'spd', 'prc', 'pow', 'prc', 'bst', 'bst', 'prc', 'bst', 'pow', 'spd', 'prc', 'bst', 'prc', 'bst', 'elm', 'elm', 'elm', 'elm', 'elm'];
   for (let guard = 0; guard < 50; guard++) { const want = plan.find((id, i) => treeLv(g, id) < plan.slice(0, i + 1).filter(x => x === id).length); if (!want || !learnNode(g, want)) return; }
 }
 const rankMul = g => treeStats(g).dmg * (1 + 0.04 * ((g && g.rank) || 0));   // tree damage, plus +4% per star the gun holds
@@ -1427,7 +1441,7 @@ function rankUp(g, n = 1, keepXp) {
   g.rank = Math.min(RANK_TOP, was + n); if (!keepXp && g.xp) g.xp = Math.min(g.xp, scrapNeed(g) - 1); floatText(`${g.def.name} \u2605${g.rank}`, P.x, P.y - 30, '#ffe39a');
   for (let k = 0; k < 14; k++) parts.push({ x: P.x, y: P.y - 10, vx: (rnd() - 0.5) * 90, vy: -rnd() * 90, life: 0.6, t: 0, size: 8, name: 'star_06', color: '#ffe39a', glow: 1 });
   tone(660, 0.1, 'triangle', 0.07); setTimeout(() => tone(990, 0.14, 'triangle', 0.06), 80);
-  if (BOT_MODE || aiWatch || tut) autoSkill(g); else { treeGun = P.guns.indexOf(g); setTimeout(() => { if (state === 'play' && !menuOpen && treePoints(g)) toggleMenu(true); }, 350); }   // a new star opens the skill tree to spend it
+  if (BOT_MODE || aiWatch || tut) autoSkill(g); else { setTimeout(() => { if (state === 'play' && !menuOpen && treePoints(g)) { treeGun = P.guns.indexOf(g); treeFromStar = true; toggleMenu(true); } }, 350); }   // a new star opens the skill tree to spend it
   return true;
 }
 function scrapGun(p) {   // melt a floor gun into the gun in your hand: 1 scrap (2 for a Legendary or fused gun); a gun past its last ability passes it to your other gun
@@ -1515,7 +1529,7 @@ function startBoss() {
   const B = guardian ? pickGuardian() : pick(giants), hp = B.hp * BOSS_HP * (0.45 + 0.18 * Math.min(10, d)) * (pactOn('fourth') ? 1.35 : 1) * (guardian ? 1.15 : 0.75) * gutterHp();   // a giant minion on floors 1-3 of a zone, the zone's guardian on the 4th
   enemies.push({ id: 'boss', boss: B, d: { r: 14, speed: 18 }, spr: B.spr, x: 136, y: 70, hp, maxHp: hp, r: B.r || 13, hy: B.hy, spawn: 1.4, t: 0, fireT: 2.2,
     tele: 0, vx: 0, vy: 0, flash: 0, stun: 0, wander: 0, face: 1, state: 'idle', move: null, moveI: 0 });
-  setBanner(B.name, B.title, 2.2); muffleMusic(1400, 2.5); run.bossHits = 0;
+  setBanner(B.name, '', 2.2); muffleMusic(1400, 2.5); run.bossHits = 0;
   if (B.variant && B.variant.pools) room.puddles.push({ x: 2 * T, y: 7 * T, w: 3 * T, h: 2 * T, cd: 0, flash: 0 }, { x: 12 * T, y: 7 * T, w: 3 * T, h: 2 * T, cd: 0, flash: 0 });
   if (B.variant && B.variant.vents) room.vents = [[56, 120], [216, 120], [136, 140]].map(([x, y], i) => ({ x, y, ph: i * 1.4 }));
 }
@@ -1537,10 +1551,23 @@ function freeSpot(x, y) {   // nearest open floor to (x, y), so drops never land
   }
   return { x, y };
 }
+const blockerAt = (x, y, r) => room.cols.find(c => x + r > c.x && x - r < c.x + c.w && y + r > c.y - COL_LIFT && y - r < c.y + c.h - COL_LIFT) || room.crates.find(c => dist(x, y, c.x, c.y - 6) < 7 + r) || null;
+const SLIDE_REACH = 11;   // how close to a pillar's corner you must be to be eased round it (px)
 function collideMove(o, nx, ny, r) {
-  // walls (doors are handled by the caller), columns, crates: slide along each axis
-  const tryAxis = (x, y) => !(room.cols.some(c => x + r > c.x && x - r < c.x + c.w && y + r > c.y - COL_LIFT && y - r < c.y + c.h - COL_LIFT) || room.crates.some(c => dist(x, y, c.x, c.y - 6) < 7 + r));
-  if (tryAxis(nx, o.y)) o.x = nx; if (tryAxis(o.x, ny)) o.y = ny;
+  // walls (doors are handled by the caller), columns, crates: move each axis on its own, and when a push straight into
+  // something is blocked, ease round its nearest corner instead of stopping dead (players and foes alike)
+  const free = (x, y) => !blockerAt(x, y, r), dx = nx - o.x, dy = ny - o.y;
+  const okX = free(nx, o.y); if (okX) o.x = nx; const okY = free(o.x, ny); if (okY) o.y = ny;
+  const slide = (b, along, step) => {   // along 'y': blocked moving in x, so step up or down (and the other way round)
+    let dir;
+    if (b.w) { const lo = along === 'y' ? b.y - COL_LIFT - r : b.x - r, hi = along === 'y' ? b.y + b.h - COL_LIFT + r : b.x + b.w + r, v = along === 'y' ? o.y : o.x;
+      const dLo = v - lo, dHi = hi - v, small = b.w <= 20 && b.h <= 20; if (!small && Math.min(dLo, dHi) > SLIDE_REACH) return; dir = Math.abs(dLo - dHi) > 0.3 ? (dLo < dHi ? -1 : 1) : (o.slideDir || 1); }   /* a single pillar always eases you round; a long wall only near its ends */
+    else { const d = along === 'y' ? o.y - (b.y - 6) : o.x - b.x; dir = Math.abs(d) > 0.3 ? Math.sign(d) : (o.slideDir || 1); }   // a round crate: roll off whichever side you are on
+    o.slideDir = dir; const sx = along === 'x' ? o.x + dir * step : o.x, sy = along === 'y' ? o.y + dir * step : o.y;
+    if (free(sx, sy)) { o.x = sx; o.y = sy; }
+  };
+  if (!okX && Math.abs(dx) > 1e-4 && Math.abs(dy) < Math.abs(dx) * 0.5) { const b = blockerAt(nx, o.y, r); if (b) slide(b, 'y', Math.abs(dx)); }
+  else if (!okY && Math.abs(dy) > 1e-4 && Math.abs(dx) < Math.abs(dy) * 0.5) { const b = blockerAt(o.x, ny, r); if (b) slide(b, 'x', Math.abs(dy)); }
 }
 
 // ---------- enemy bullets & patterns ----------
@@ -1608,6 +1635,7 @@ function fireGun(g, dt, tu) {   // tu: a Sentry Turret firing a half-damage copy
     if (def.id === 'glacier' || (def.id === 'faithful' && (g.alt = !g.alt))) b.ghost = 1;   // these pass straight through enemy bullets
     if (m.boomChance && rnd() < m.boomChance && !b.explode) b.explode = 16;
     b.pierce += ts.pierce; b.chain += ts.chain; b.bounce += ts.bounce; b.homing += ts.homing;   /* skill tree */ if (!b.explode && ts.burst && rnd() < ts.burst) { b.explode = ts.burstR; b.treeBurst = 1; } else if (b.explode && ts.blastGrow > 1) b.explode *= ts.blastGrow;
+    if (ts.burstElem && b.explode && !b.elem) { b.elem = pick(['burn', 'chill', 'shock']); b.color = ELEM[b.elem].color; } b.knock = ts.knock;
     if (!b.elem && ts.elem && rnd() < ts.elem) { b.elem = pick(['burn', 'chill', 'shock']); b.color = ELEM[b.elem].color; } if (b.elem && ts.elemDmg > 1) b.dmg *= ts.elemDmg; if (power) { b.r *= 1.8; b.power = 1; }
     if (tu && (def.kind === 'orbit' || def.kind === 'boomer')) { b.kind = 'bullet'; b.life = 1; b.child = 1; pbul.push(b); continue; }   // a turret can't orbit you, so these fly straight
     if (tu) b.child = 1;
@@ -1684,6 +1712,7 @@ function switchToLoaded() {
 }
 
 // ---------- damage ----------
+const KNOCK = 0.9, KNOCK_MAX_BASE = 1.2, KNOCK_MAX = 2.4;   // per-hit shove in pixels: was 2.5x the hit's push (about 3 px a bullet, uncapped); now 0.9x, at most 1.2 px (2.4 px with Heavy Rounds)
 function damageEnemy(e, dmg, kx, ky, quiet) {
   if (e.spawn > 0 || e.dead) return;
   e.revealT = Math.max(e.revealT || 0, T_ + 0.25); if (e.asleep) wakeGuard();   // a hit lights a foe up in the dark (and wakes a sleeper)
@@ -1694,7 +1723,7 @@ function damageEnemy(e, dmg, kx, ky, quiet) {
   if (e.st && e.st.frozen > 0) dmg *= 1 + playerMods().frozenMul;   // Cold Snap
   if (e.ironHp > 0) { e.ironHp -= dmg; if (e.ironHp > 0) { e.flash = 0.05; return; } dmg = -e.ironHp; }   // Iron pact shield soaks hits first
   e.hp -= dmg; e.flash = 0.07;
-  if (pactOn('iron') && !e.ironed && !e.boss && !e.gen && e.hp > 0 && e.hp < e.maxHp * 0.5) { e.ironed = 1; e.ironHp = e.maxHp * 0.3; tone(500, 0.08, 'square', 0.03); } if (!e.boss) collideMove(e, clamp(e.x + kx * 2.5, X0, X1), clamp(e.y + ky * 2.5, Y0, Y1), e.r);   // knockback never shoves anyone into a column
+  if (pactOn('iron') && !e.ironed && !e.boss && !e.gen && e.hp > 0 && e.hp < e.maxHp * 0.5) { e.ironed = 1; e.ironHp = e.maxHp * 0.3; tone(500, 0.08, 'square', 0.03); } if (!e.boss) { const kh = Math.hypot(kx, ky), kb = Math.min(kh * KNOCK, kh > 1.01 ? KNOCK_MAX : KNOCK_MAX_BASE); const ka = Math.atan2(ky, kx); if (kb > 0.01) collideMove(e, clamp(e.x + Math.cos(ka) * kb, X0, X1), clamp(e.y + Math.sin(ka) * kb, Y0, Y1), e.r); }   // knockback, much lighter than it was and capped per hit; never shoves anyone into a column
   run.hits++;
   if (!quiet && rnd() < 0.5) parts.push({ x: e.x, y: e.y - 8, vx: kx * 30 + (rnd() - 0.5) * 40, vy: ky * 30 - 20, life: 0.25, t: 0, size: 6, name: 'spark_04', color: '#ffe0a8', glow: 1 });
   if (e.hp <= 0) killEnemy(e);
@@ -1880,6 +1909,7 @@ function clearNear(r) { ebul = ebul.filter(b => { const near = dist(b.x, b.y, P.
 let bombs = [];
 function useBlank() {
   if (P.blanks <= 0 || state !== 'play' || bombs.length) return;
+  if (!enemies.some(e => !e.dead)) { floatText('No foes to bomb', P.x, P.y - 26, '#b0a090'); tone(200, 0.06, 'square', 0.02); return; }   // bombs are for fights: none in an empty room or the Camp
   P.blanks--; hintDone('blank');
   const reach = Math.min(70, Math.max(24, dist(P.x, P.y, input.mx, input.my))), tx = clamp(P.x + Math.cos(P.aim) * reach, X0 + 4, X1 - 4), ty = clamp(P.y + Math.sin(P.aim) * reach, Y0 + 4, Y1 - 4);
   bombs.push({ sx: P.x, sy: P.y - 8, tx, ty, x: P.x, y: P.y, h: 0, t: 0, fly: 0.32, fuse: 0.22 });
@@ -1926,7 +1956,7 @@ function bossDefeated(e) {
   ebul = []; shake = 8; flash = 0.8; tone(392, 0.3, 'triangle', 0.1); setTimeout(() => tone(523, 0.3, 'triangle', 0.1), 120); setTimeout(() => tone(784, 0.5, 'triangle', 0.1), 260);
   // a heart container only for a flawless fight (like Gungeon's Master Rounds); otherwise a heart
   const flawless = !run.bossHits, guardian = isGuardian(run.floor);   // a container for a flawless guardian only; a flawless floor boss heals you fully and pays 10 coins
-  room.pickups.push(flawless && guardian ? { kind: 'vessel', x: 104, y: 60 } : { kind: 'heart', x: 104, y: 60 }, { kind: 'chest', x: 136, y: 58, gun: rollGun(run.floor, 1) });
+  room.pickups.push(flawless && guardian ? { kind: 'vessel', x: 104, y: 60 } : rnd() < 0.5 ? { kind: 'heart', x: 104, y: 60 } : { kind: 'coin', x: 104, y: 60, n: 10 },   /* a boss leaves a heart half the time */ { kind: 'chest', x: 136, y: 58, gun: rollGun(run.floor, 1) });
   if (flawless && !guardian) { P.hp = P.maxHp; room.pickups.push({ kind: 'coin', x: 124, y: 112, n: 10 }); }
   if (flawless && guardian) setBanner('Flawless!', '+1 heart container', 1.8);
   room.ladderPending = true;   // the ladder appears once the reward chest is opened
@@ -1941,11 +1971,17 @@ function enterShopStop() {   // the Coin door: one shop on the stairs, with the 
   furnish(r); floorMap = { rooms: [r], start: r }; enterRoom(r, null); P.x = 136; P.y = 150; r.ladder = { x: 228, y: 132 };
   }
 function openDescent() {
+  if (room.descentSaved) { run.nextMods = room.descentSaved.mods; run.descent = { opts: room.descentSaved.opts, t: T_ }; state = 'descent'; input.fire = false; tone(392, 0.2, 'triangle', 0.06); return; }   // stepping back on the ladder shows the same doors
   const f = run.floor + 1, keys = Object.keys(DESCENT), opts = [];
   const n = f <= 2 ? 2 : 3;
   while (opts.length < n) { const k = weighted(keys.filter(q => !opts.includes(q)), q => DESCENT[q].w * (q === 'lantern' && P.hp <= P.maxHp / 2 ? 1.6 : 1)); opts.push(k); }
-  run.nextMods = rollMods(f); run.descent = { opts, t: T_ }; state = 'descent'; input.fire = false;
+  run.nextMods = rollMods(f); run.descent = { opts, t: T_ }; state = 'descent'; input.fire = false; room.descentSaved = { opts, mods: run.nextMods };
   tone(392, 0.2, 'triangle', 0.06); setTimeout(() => tone(523, 0.25, 'triangle', 0.05), 90);
+}
+function leaveDescent() {   // Back: step off the ladder and finish the floor; the ladder waits
+  if (state !== 'descent' || T_ - run.descent.t < 0.2) return;
+  run.descent = null; state = 'play'; room.ladderCool = true; if (room.ladder) { P.x = room.ladder.x; P.y = room.ladder.y - 20; if (solidAt(P.x, P.y, PR + 3)) Object.assign(P, freeSpot(P.x, P.y)); }
+  tone(330, 0.1, 'triangle', 0.05);
 }
 function chooseDescent(i) {
   if (state !== 'descent' || !run.descent.opts[i] || T_ - run.descent.t < 0.35) return;
@@ -2111,7 +2147,7 @@ function update(dt) {
       if (e.dead || e.spawn > 0 || b.hit.has(e)) continue;
       if (dist(b.x, b.y, e.x, e.y - (e.hy || 6)) < e.r + b.r + 1) {
         b.hit.add(e);
-        damageEnemy(e, b.dmg, b.vx / 200, b.vy / 200);
+        { const kk = Math.min(1, Math.hypot(b.vx, b.vy) / 240) * (b.knock || 1), ka = Math.atan2(b.vy, b.vx); damageEnemy(e, b.dmg, Math.cos(ka) * kk, Math.sin(ka) * kk); }
         if (b.elem) applyElem(e, b.elem, b.dmg);
         if (b.chain) chainZap(e, b.chain, b.dmg * 0.6);
         if (b.boom && rnd() < b.boom) explode(b.x, b.y, b.explode, b.dmg * 3, b);
@@ -2239,7 +2275,8 @@ function update(dt) {
     tone(523, 0.12, 'triangle', 0.07); setTimeout(() => tone(784, 0.18, 'triangle', 0.06), 80);
   }
   labUpdate(dt); tutUpdate(dt);
-  if (room.ladder && dist(P.x, P.y, room.ladder.x, room.ladder.y) < 9) { if (room.shopStop) { run.flavour = null; enterFloor(run.floor + 1); } else openDescent(); return; }
+  if (room.ladderCool && room.ladder && dist(P.x, P.y, room.ladder.x, room.ladder.y) > 14) room.ladderCool = false;   // step off the ladder before it works again
+  if (room.ladder && !room.ladderCool && dist(P.x, P.y, room.ladder.x, room.ladder.y) < 9) { if (room.shopStop) { run.flavour = null; enterFloor(run.floor + 1); } else openDescent(); return; }
   if (room.type === 'fountain' && !room.fountainUsed && dist(P.x, P.y, 136, 44) < 22) { room.fountainUsed = true; P.hp = Math.min(P.maxHp, P.hp + (pactOn('hunger') ? 2 : 4)); tone(523, 0.3, 'sine', 0.08); tone(784, 0.4, 'sine', 0.06); }
   const near = nearestInteract(); if (near) hint(near.price ? 'shop' : 'chest');
   if ((room.braziers || []).length && !room.cleared && room.hadBarrels) hint('brazier');
@@ -2320,7 +2357,7 @@ function roomCleared() {
   // reward roll, with pity for hearts when hurt (and a little hidden luck after lost runs)
   run.sincePickup++;
   const m = playerMods(), luck = luckFor();
-  const heartChance = P.hp < P.maxHp ? 0.08 + 0.06 * run.sincePickup + luck : 0;
+  const heartChance = P.hp <= P.maxHp - 2 && !pactOn('hunger') ? Math.min(0.2, 0.03 + 0.025 * run.sincePickup + luck * 0.5) : 0;   // hearts are rare now: only when a whole heart is missing (was 8% + 6% a room, any damage)
   const spot = freeSpot(136, 96);
   if (rnd() < heartChance) { room.pickups.push({ kind: 'heart', ...spot }); run.sincePickup = 0; }
   else if (rnd() < 0.45 + m.luck + luck + (hasMod('bounty') ? 0.2 : 0)) { const r = rnd(); room.pickups.push({ kind: r < 0.64 ? 'coin' : r < 0.86 ? 'blank' : 'key', ...spot, n: 3 }); }
@@ -2717,7 +2754,7 @@ function drawHud() {
     ctx.strokeStyle = '#ffcf6b'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(16 + k * 22 + 11, 52, 9, -Math.PI / 2, -Math.PI / 2 + f * TAU); ctx.stroke(); }
   ctx.save(); ctx.translate(16 + bombSlots() * 22 + 14, 42); ctx.scale(2.2, 2.2); sp(`coin_anim_f${Math.floor(T_ * 6) % 4}`, 3, 7); ctx.restore();
   hudText(`${P.coins}`, 16 + bombSlots() * 22 + 34, 51, 16, '#ffe39a', 'left');
-  if (run && !tut) { const cw = ctx.measureText(`${P.coins}`).width; let x = 16 + bombSlots() * 22 + 34 + cw + 16;   // this run's embers and gun parts, live
+  if (run && !tut) { ctx.font = `700 ${16 * (opt('bigText') ? 1.15 : 1)}px m6x11,system-ui,-apple-system,sans-serif`; const cw = ctx.measureText(`${P.coins}`).width; let x = 16 + bombSlots() * 22 + 34 + cw + 16 + (P.keys > 0 ? 24 + ctx.measureText(`${P.keys}`).width + 14 : 0);   // this run's embers and gun parts, live (after the key count, if you carry keys)
     const icon = (name, x) => { if (ready(UIICONS)) ctx.drawImage(UIICONS, ICON.indexOf(name) * 16, 0, 16, 16, x, 35, 32, 32); };
     icon('ember', x); hudText(`${runEmbers()}`, x + 34, 51, 16, '#ffb36b', 'left'); x += 34 + ctx.measureText(`${runEmbers()}`).width + 14;
     icon('part', x); hudText(`${run.parts || 0}`, x + 34, 51, 16, '#c9d4e0', 'left'); }
@@ -2815,7 +2852,7 @@ function draw() {
   const boss = enemies.find(e => e.boss);
   if (boss && boss.spawn <= 0) { const bw = 520, bx = (W - bw) / 2, by = H - 22;
     ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(bx - 2, by - 2, bw + 4, 12); ctx.fillStyle = '#ff6b8f'; ctx.fillRect(bx, by, bw * Math.max(0, boss.hp) / boss.maxHp, 8);
-    hudText(`${boss.boss.name}, ${boss.boss.title}`, W / 2, by - 12, 13, '#ffd0dc'); }
+    hudText(boss.boss.name, W / 2, by - 12, 13, '#ffd0dc'); }
   if (banner) { const e = T_ - banner.t0; if (e > banner.dur) banner = null; else { const a = Math.min(1, e * 4, (banner.dur - e) * 3);
     ctx.globalAlpha = a; hudText(banner.text, W / 2, 210, 40, '#fff3c4', 'center', 900); if (banner.sub) hudText(banner.sub, W / 2, 248, 17, '#e0d6cc'); ctx.globalAlpha = 1; } }
   if (tut && TUT_STEPS[tut.i] && !menuOpen) { const st = TUT_STEPS[tut.i];   // the current tutorial step, always on screen
@@ -2844,6 +2881,9 @@ function drawDescent() {
     hudText(D.name, x + cw / 2, y + 154 + (hov ? 0 : 0), 19, '#241805', 'center', 900);
     D.desc.forEach((line, j) => hudText(line, x + cw / 2, y + 192 + j * 20, 14, '#e0d6cc'));
     d.rects.push({ x, y: y0, w: cw, h }); });
+  const bw = 200, bx = W / 2 - bw / 2, byy = 470, bh = d.backHover;   // Back: return to the floor and come back to the ladder later
+  nineSlice(bh ? UIBTNH : UIBTN, bx, byy - (bh ? 2 : 0), bw, 36, 4, 5, 4, 5, 3); hudText('Back to the floor', W / 2, byy + 18 - (bh ? 2 : 0), 16, '#241805', 'center', 900);
+  hudText('Esc', bx + bw + 14, byy + 18, 12, '#a89e94', 'left'); d.back = { x: bx, y: byy, w: bw, h: 36 };
   ctx.globalAlpha = 1;
 }
 function drawDescentIcon(k, x, y, hov) {   // door icons, drawn from the same tileset, on a stepped pixel halo
@@ -2903,6 +2943,7 @@ function startRoll() {
 const KEYMAP = { arrowup: 1, arrowdown: 1, arrowleft: 1, arrowright: 1 };
 addEventListener('keydown', e => {
   const k = e.key.toLowerCase(); ensureAudio();
+  if (state === 'descent' && !menuOpen && (k === 'escape' || k === 'backspace')) { leaveDescent(); return; }   // the ladder screen's Back
   if (k === 'escape' || k === 'p') { if (state === 'play' || (aiWatch && state !== 'dead')) toggleMenu(); return; }
   if (menuOpen) { if ((k === 'enter' || k === ' ') && view === 'summary') { e.preventDefault(); restart(); } return; }
   if (e.metaKey || e.ctrlKey) return;
@@ -2927,7 +2968,7 @@ cv.addEventListener('contextmenu', e => e.preventDefault());
 cv.addEventListener('pointerdown', e => {
   ensureAudio(); if (menuOpen) return;
   const p = toLogical(e);
-  if (state === 'descent') { const i = (run.descent.rects || []).findIndex(r => p.x > r.x && p.x < r.x + r.w && p.y > r.y && p.y < r.y + r.h); if (i >= 0) chooseDescent(i); return; }
+  if (state === 'descent') { const bk = run.descent.back; if (bk && p.x > bk.x && p.x < bk.x + bk.w && p.y > bk.y && p.y < bk.y + bk.h) { leaveDescent(); return; } const i = (run.descent.rects || []).findIndex(r => p.x > r.x && p.x < r.x + r.w && p.y > r.y && p.y < r.y + r.h); if (i >= 0) chooseDescent(i); return; }
   if (e.pointerType === 'touch') {
     for (const [k, b] of Object.entries(TBTN)) if (dist(p.x, p.y, b.x, b.y) < b.r && (k !== 'scrap' || scrapTarget() || shopGunNear())) { if (k === 'use') touches.set(e.pointerId, { role: 'use' }); if (k === 'scrap') touches.set(e.pointerId, { role: 'scrap' }); ({ roll: startRoll, blank: useBlank, use: useDown, swap: () => swapGun(1), act: useActive, scrap: scrapNear })[k](); return; }
     const role = p.x < W / 2 ? 'move' : 'aim'; touches.set(e.pointerId, { role, sx: p.x, sy: p.y, x: p.x, y: p.y }); return;
@@ -2937,7 +2978,7 @@ cv.addEventListener('pointerdown', e => {
 });
 cv.addEventListener('pointermove', e => {
   const p = toLogical(e);
-  if (state === 'descent' && run.descent) run.descent.hover = (run.descent.rects || []).findIndex(r => p.x > r.x && p.x < r.x + r.w && p.y > r.y && p.y < r.y + r.h);
+  if (state === 'descent' && run.descent) { run.descent.hover = (run.descent.rects || []).findIndex(r => p.x > r.x && p.x < r.x + r.w && p.y > r.y && p.y < r.y + r.h); const bk = run.descent.back; run.descent.backHover = !!(bk && p.x > bk.x && p.x < bk.x + bk.w && p.y > bk.y && p.y < bk.y + bk.h); }
   if (e.pointerType === 'touch') { const t = touches.get(e.pointerId); if (!t || t.role === 'use') return; t.x = p.x; t.y = p.y;
     const dx = t.x - t.sx, dy = t.y - t.sy, l = Math.hypot(dx, dy);
     if (t.role === 'move') input.touchMove = { dx: clamp(dx / 46, -1, 1), dy: clamp(dy / 46, -1, 1) };
@@ -2959,7 +3000,7 @@ $('menuBtn').onclick = e => { e.stopPropagation(); if (state === 'play') toggleM
 function toggleMenu(force) {
   menuOpen = force !== undefined ? force : !menuOpen;
   $('overlay').classList.toggle('hidden', !menuOpen);
-  if (menuOpen) { view = 'menu'; renderPanel(); } input.fire = false; input.keys = {};
+  if (menuOpen) { view = 'menu'; if (P && P.guns.length && !treeFromStar) treeGun = P.gi; treeFromStar = false; renderPanel(); } input.fire = false; input.keys = {};   // the tree opens on the gun in your hand (or the gun that just earned a star)
   applyMusicVolume();
 }
 function heroGrid() {
@@ -3000,20 +3041,27 @@ function pauseRight(inRun) {
   const curses = run.curses.map(k => rule(CURSES[k].name, CURSES[k].desc)).join('') + (run.pacts || []).map(k => rule(PACTS[k].name, PACTS[k].desc)).join('');
   return `<h3>Level ${run.floor}</h3>${P.guns.length ? treeHtml() : ''}${curses ? `<h3>Curses</h3>${curses}` : ''}`;
 }
-function treeHtml() {   // the circular skill tree: the gun in the middle, five paths going out, the strongest steps on the rim
-  treeGun = clamp(treeGun, 0, P.guns.length - 1); const g = P.guns[treeGun], pts = treePoints(g), R = [60, 97, 132, 166, 200], C = 222;
-  const pos = (bi, k) => { const a = -Math.PI / 2 + bi * TAU / TREE.length; return [C + Math.cos(a) * R[k], C + Math.sin(a) * R[k]]; };
-  let lines = R.map((r, k) => `<circle cx="${C}" cy="${C}" r="${r}" fill="none" stroke="${k === 4 ? '#5a4560' : '#3a2c40'}" stroke-width="2" stroke-dasharray="2 6"/>`).join(''), nodes = '';
+function treeHtml() {   // the circular skill tree: the gun in the middle, five paths going out, cross-path steps between them
+  treeGun = clamp(treeGun, 0, P.guns.length - 1); const g = P.guns[treeGun], pts = treePoints(g), R = [74, 124, 174, 224, 274], RX = 206, C = 304;
+  const ang = bi => -Math.PI / 2 + bi * TAU / TREE.length, at = (a, r) => [C + Math.cos(a) * r, C + Math.sin(a) * r], pos = (bi, k) => at(ang(bi), R[k]);
+  const css = (x, y) => `left:${x / C / 2 * 100}%;top:${y / C / 2 * 100}%`;
+  let lines = R.map((r, k) => `<circle cx="${C}" cy="${C}" r="${r}" fill="none" stroke="${k === 4 ? '#5a4560' : '#3a2c40'}" stroke-width="2" stroke-dasharray="2 7"/>`).join(''), nodes = '';
   TREE.forEach((br, bi) => { const lv = treeLv(g, br.id);
     br.nodes.forEach((n, k) => { const [x, y] = pos(bi, k), [px, py] = k ? pos(bi, k - 1) : [C, C], got = k < lv, next = k === lv, can = next && pts >= TREE_COST[k];
       lines += `<line x1="${px}" y1="${py}" x2="${x}" y2="${y}" stroke="${got ? br.color : '#4a3a4e'}" stroke-width="${got ? 4 : 3}" ${got ? '' : 'stroke-dasharray="4 4"'}/>`;
-      nodes += `<button class="tnode ${got ? 'got' : can ? 'can' : next ? 'next' : ''} ${k === 4 ? 'cap' : ''}" style="left:${x / C / 2 * 100}%;top:${y / C / 2 * 100}%;--c:${br.color}" data-node="${br.id}" data-k="${k}">${ico(br.icon, k === 4 ? 2 : 1)}<span class="tc">${TREE_COST[k]}</span></button>`; }); });
+      nodes += `<button class="tnode ${got ? 'got' : can ? 'can' : next ? 'next' : ''} ${k === 4 ? 'cap' : ''}" style="${css(x, y)};--c:${br.color}" data-node="${br.id}" data-k="${k}">${ico(br.icon, k === 4 ? 2 : 1)}<span class="tc">${TREE_COST[k]}</span></button>`; }); });
+  TREE_X.forEach(X => { const ia = TREE.findIndex(t => t.id === X.a), ib = TREE.findIndex(t => t.id === X.b), mid = ang(ia) + TAU / TREE.length / 2, [x, y] = at(mid, RX);
+    const got = !!treeLv(g, X.id), open = xOpen(g, X), can = !got && open && pts >= X_COST, ca = TREE[ia].color, cb = TREE[ib].color;
+    for (const [bi, c] of [[ia, ca], [ib, cb]]) { const [px, py] = pos(bi, X_NEED - 1); lines += `<line x1="${px}" y1="${py}" x2="${x}" y2="${y}" stroke="${got || treeLv(g, TREE[bi].id) >= X_NEED ? c : '#4a3a4e'}" stroke-width="${got ? 4 : 2}" ${got ? '' : 'stroke-dasharray="3 5"'}/>`; }
+    nodes += `<button class="tnode x ${got ? 'got' : can ? 'can' : open ? 'next' : ''}" style="${css(x, y)};--c:${ca};--c2:${cb}" data-x="${X.id}">${ico(X.icon, 1)}<span class="tc">${X_COST}</span></button>`; });
   const tabs = P.guns.length > 1 ? `<div class="row ttabs">${P.guns.map((q, i) => `<button class="pbtn ${i === treeGun ? 'on' : 'ghost'}" data-tgun="${i}">${q.def.name}</button>`).join('')}</div>` : '';
   return `${tabs}<div class="tree"><svg viewBox="0 0 ${C * 2} ${C * 2}">${lines}</svg><div class="tcore" data-tcore>${gunIcon(g.def.id)}</div>${nodes}</div>
     <div class="tinfo" id="tinfo">${treeIdle(g)}</div>
     <div class="row" style="justify-content:space-between;align-items:center"><span class="st-note" style="margin:0">${g.def.name} ★${g.rank || 0} · <b style="color:#ffe39a">${pts} to spend</b></span>
     <button class="pbtn ghost" data-act="reskill" ${treeSpent(g) && g.rank ? '' : 'disabled'}>Reskill (costs 1★)</button></div>`;
 }
+function treeXInfo(g, X) { const A = TREE.find(t => t.id === X.a), B = TREE.find(t => t.id === X.b);
+  return `<b style="color:${A.color}">${X.name}</b> · ${X_COST} ★ · needs <span style="color:${A.color}">${A.name} ${X_NEED}</span> and <span style="color:${B.color}">${B.name} ${X_NEED}</span><br>${X.desc}<br><small>${treeLv(g, X.id) ? 'Learned' : !xOpen(g, X) ? 'Learn both paths to step 3 first' : treePoints(g) >= X_COST ? 'Click to learn' : `Needs ${X_COST} ★`}</small>`; }
 const treeIdle = g => treePoints(g) ? `You have ${treePoints(g)} ★ to spend. Pick a glowing step. The further out a path goes, the stronger it gets.` : `Earn stars by scrapping guns (G) or with Whetstones. ${(g.rank || 0) < RANK_TOP ? `${g.xp || 0}/${scrapNeed(g)} scraps to the next star.` : ''}`;
 function treeInfo(g, id, k) { const br = TREE.find(b => b.id === id), lv = treeLv(g, id);
   return `<b style="color:${br.color}">${br.name} ${k + 1}</b> · ${TREE_COST[k]} ★<br>${br.nodes[k][0]}<br><small>${k < lv ? 'Learned' : k === lv ? (treePoints(g) >= TREE_COST[k] ? 'Click to learn' : `Needs ${TREE_COST[k]} ★`) : `Learn ${br.name} ${lv + 1} first`}</small>`; }
@@ -3024,6 +3072,11 @@ function wireTree(p) {
     b.onmouseleave = () => { if (info && picked !== b) info.innerHTML = treeIdle(g); };
     b.onpointerup = e => { if (e.pointerType === 'touch' && picked !== b) { picked = b; if (info) info.innerHTML = treeInfo(g, id, k); return; }   // touch: first tap shows it, second learns
       if (k === treeLv(g, id) && learnNode(g, id)) { persist(); renderPanel(); } }; });
+  p.querySelectorAll('[data-x]').forEach(b => { const X = TREE_X.find(x => x.id === b.dataset.x);
+    b.onmouseenter = () => { if (info) info.innerHTML = treeXInfo(g, X); };
+    b.onmouseleave = () => { if (info && picked !== b) info.innerHTML = treeIdle(g); };
+    b.onpointerup = e => { if (e.pointerType === 'touch' && picked !== b) { picked = b; if (info) info.innerHTML = treeXInfo(g, X); return; }
+      if (learnNode(g, X.id)) { persist(); renderPanel(); } }; });
   p.querySelectorAll('[data-tgun]').forEach(b => b.onclick = () => { treeGun = +b.dataset.tgun; renderPanel(); });
 }
 let almanacTab = 'guns', debugAll = false;   // debugAll: the pause screen's debug switch that reveals every gun and fusion
