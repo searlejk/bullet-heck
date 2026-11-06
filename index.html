@@ -145,7 +145,7 @@ const W = 960, H = 600, S = 3, T = 16, VW = 17, VH = 11, OX = (W - VW * T * S) /
 let RW = VW, RH = VH, X0, X1, Y0, Y1, camX = 0, camY = 0;   // the current room's size in tiles, its walkable box in art pixels, and the camera
 const CAMP_W = VW + 2, CAMP_H = VH;   // the Camp is one tile wider on each side than a dungeon room
 const PUBLIC_BUILD = true;   // true in the GitHub Pages build (tests/package-gunlight.py): debug tools are hidden there
-const DEBUG_FUSION_LEVEL = 5;   // every level 5 has a fusion room, on every build including the public site (0 = off). Owner's debug request. TODO before release: set false or delete (owner's note)   // the Camp is bigger than a dungeon room; the camera follows you around it
+const DEBUG_FUSION_LEVEL = 6;   // every level 6 has a fusion room (fusion rooms start after level 5), on every build including the public site (0 = off). Owner's debug request. TODO before release: set false or delete (owner's note)   // the Camp is bigger than a dungeon room; the camera follows you around it
 const PR = 3, ZONE_LEN = 4, TARGET_PASS = 0.6, TAU = Math.PI * 2;
 // The descent never ends. Each zone is three floors and a guardian floor; the three zone looks cycle (Keep,
 // Crypts, Ember Depths, then the Keep again), and every full cycle adds a standing floor rule. Difficulty
@@ -823,7 +823,7 @@ function genFloor(f, rng, flavour) {
   if (f >= 2 && rng() < 0.55) opt.push('vault');
   if (f >= 2 && rng() < 0.3) opt.push('heist');   // the Heist: coins and a strongbox, watched by a sleeping guard
   if (f === DEBUG_FUSION_LEVEL) req.push('fusion');   // TODO before release: remove (see DEBUG_FUSION_LEVEL)
-  else if (f >= 2 && rng() < 0.3) opt.unshift('fusion');   // rare: the only place guns can be fused
+  else if (f >= 6 && rng() < 0.3) opt.unshift('fusion');   /* no fusion rooms before level 6 */   // rare: the only place guns can be fused
   for (let attempt = 0; attempt < 300; attempt++) {
     const specials = req.concat(opt.slice(0, Math.max(0, opt.length - Math.floor(attempt / 80))));
     const target = 3 + Math.min(2, localOf(f)) + Math.min(1, zoneOf(f)) + Math.floor(rng() * 2) + Math.max(0, specials.length - 3) - (flavour === 'lantern' ? 1 : 0), GW = 9, GH = 8, start = [4, 3];
@@ -854,7 +854,7 @@ function genFloor(f, rng, flavour) {
       if (fi < 0) continue; rest.splice(fi, 1)[0].type = 'fountain'; }
     let bad = false;
     for (const sp of specials.filter(k => k !== 'boss' && k !== 'fountain')) { const [t, ev] = sp.split(':'), store = t === 'treasure' || t === 'shop' || t === 'heist' || ev === 'merchant';
-      const i = store ? rest.findIndex(q => q.d > 1) : 0; if (i < 0) { bad = true; break; }   // the rooms next to the start are never a store or a chest room
+      const i = store ? rest.findIndex(q => q.d > 1) : 0; if (i < 0) { if (attempt < 200) { bad = true; break; } continue; }   // the rooms next to the start are never a store or a chest room; a tiny floor that can't fit one far enough goes without it
       const r = rest.splice(i, 1)[0]; r.type = t; if (t === 'treasure') { if (ev) r.blue = true; } else if (ev) r.event = ev; if (t === 'vault') r.locked = true; }
     if (bad) continue;
     for (const r of rooms) if (r.type !== 'combat' && r.type !== 'boss' && r.event !== 'rescue') r.cleared = true;
@@ -1009,7 +1009,8 @@ function enterFloor(f) {
   P.blocksLeft = (P.blocks || 0) + (hasSyn('defense') ? 1 : 0); if (f > 1 && hasSkill('vit3')) P.hp = Math.min(P.maxHp, P.hp + 1);   // Chain Shirt refills, Second Wind heals
   (run.flavourLog || (run.flavourLog = [])).push(run.flavour || '-'); (run.modLog || (run.modLog = [])).push(run.mods.join('+') || '-');
   const rng = (BOT_MODE === 'test' || BOT_MODE === 'progress') && window.__floorSeed ? mulberry32(window.__floorSeed + f) : mulberry32((Math.random() * 1e9) | 0);
-  floorMap = genFloor(f, rng, run.flavour); floorMap.rooms.forEach(furnish);
+  for (let k = 0; ; k++) { try { floorMap = genFloor(f, k ? mulberry32((rng() * 1e9) | 0) : rng, run.flavour); break; } catch (err) { if (k >= 6) throw err; } }   // a rare layout that can't fit every room: roll the floor again
+  floorMap.rooms.forEach(furnish);
   if (!P.hero.rebomb) P.blanks = Math.max(P.blanks, P.blankCap);   // the Dwarf's bombs only come back by recharging in fights
   enterRoom(floorMap.start, null);
   const Z = ZONES[themeOf(f)], name = Z.floors[localOf(f) - 1], rules = run.mods.map(k => MODS[k].name).join(' · ');
@@ -1317,19 +1318,23 @@ function openSecret(r) {
 }
 
 // ---------- loot ----------
-function tierOdds(f) {   // chest odds by floor (D/C/B/A/S), interpolated between floor 1 and floor 5
-  // Every gun can drop from the first run, so A and S guns are kept rare: a lucky find, not the usual loadout.
-  const a = [42, 36, 19, 2.5, 0.5], b = [8, 32, 44, 13, 3], t = (f - 1) / 4;
-  const o = a.map((v, k) => lerp(v, b[k], t)); const shift = luckFor() * 20; o[0] = Math.max(0, o[0] - shift); o[1] += shift; return o;
+// Gun odds by level (D/C/B/A/S): the first floors are mostly Common and Uncommon, Rare and Epic guns grow more likely
+// as the run goes on, and Legendary guns never drop before level 11 (owner's rule, 2026-11-06).
+const TIER_BY_FLOOR = [[1, [55, 38, 7, 0, 0]], [3, [40, 42, 16, 2, 0]], [6, [22, 40, 30, 8, 0]], [9, [12, 32, 40, 16, 0]], [11, [8, 26, 42, 18, 6]], [16, [6, 22, 40, 22, 10]]];
+const LEGENDARY_FROM = 11;
+function tierOdds(f) {
+  let k = 0; while (k < TIER_BY_FLOOR.length - 2 && f > TIER_BY_FLOOR[k + 1][0]) k++;
+  const [f0, a] = TIER_BY_FLOOR[k], [f1, b] = TIER_BY_FLOOR[k + 1], t = clamp((f - f0) / (f1 - f0), 0, 1);
+  const o = a.map((v, i) => lerp(v, b[i], t)); const shift = luckFor() * 20; o[0] = Math.max(0, o[0] - shift); o[1] += shift; return o;
 }
-function rollGun(f, bump = 0) {
-  const odds = tierOdds(Math.min(5, depth(f) + bump)), tot = odds.reduce((a, b) => a + b, 0);
+function rollGun(f, bump = 0) {   // bump: a better chest (vaults, mimics, bosses) rolls as if it were 3 levels deeper per step
+  const odds = tierOdds(f + 3 * bump); if (f < LEGENDARY_FROM) odds[4] = 0; const tot = odds.reduce((a, b) => a + b, 0);
   let x = rnd() * tot, ti = 0; while (x > odds[ti] && ti < 4) { x -= odds[ti]; ti++; }
   if (ti >= 3 && run.highTier >= 1 && rnd() < 0.6) ti = 2;   // like Gungeon's "Magnificence": fewer stacked top-tier guns
-  const owned = new Set(P.guns.map(g => g.def.id));
-  let pool = LOOT_GUNS.filter(g => g.tier === TIERS[ti] && !owned.has(g.id));   // every gun can drop from the start
-  if (!pool.length) pool = LOOT_GUNS.filter(g => !owned.has(g.id));
-  if (!pool.length) pool = LOOT_GUNS;
+  const owned = new Set(P.guns.map(g => g.def.id)), top = f < LEGENDARY_FROM ? 3 : 4;
+  let pool = LOOT_GUNS.filter(g => g.tier === TIERS[ti] && !owned.has(g.id));
+  if (!pool.length) pool = LOOT_GUNS.filter(g => TIERS.indexOf(g.tier) <= Math.min(ti, top) && !owned.has(g.id));   // never fall back to a rarer gun than allowed
+  if (!pool.length) pool = LOOT_GUNS.filter(g => TIERS.indexOf(g.tier) <= top);
   return pick(pool).id;
 }
 // Repeatable relics stack only so far: heart relics twice, Small Aegis three times (Bomb Pouch is unlimited). Before this cap,
@@ -1361,29 +1366,36 @@ const nextPerk = r => { const k = Object.keys(RANK_PERKS).map(Number).find(n => 
 // The gun skill tree (Esc screen, right side): the same five paths for every gun. Each star a gun earns is a point to
 // spend; the first two steps of a path cost 1, the last three cost 2, and the further out a step is the stronger it is.
 // 5 paths x 8 points = 40 = RANK_TOP, so a gun that reaches the top has the whole tree. Reskilling costs one star.
+// Balanced on a damage range (8 stars in one path, 10 guns): every path is about 3x on one target; Precision and Blast
+// pay off against groups instead (about 5x vs 3 spread foes, 6-7x vs a tight pack), Power, Speed and Element don't.
 const TREE = [
   { id: 'pow', name: 'Power', color: '#ff6b5a', icon: 'up_dmg', nodes: [
-    ['+15% damage'], ['+15% damage'], ['Every 5th shot is a power shot (2.5x damage)'], ['+30% damage'], ['Every 3rd shot is a power shot, and they hit 3x'] ] },
+    ['+15% damage'], ['+15% damage'], ['Every 5th shot is a power shot (2.5x damage)'], ['+25% damage'], ['Every 3rd shot is a power shot, and they hit 3x'] ] },
   { id: 'spd', name: 'Speed', color: '#ffd84a', icon: 'up_rate', nodes: [
-    ['+15% fire rate'], ['Reload 25% faster, +10% fire rate'], ['+20% fire rate'], ['+1 bullet per shot'], ['+30% fire rate, reload 30% faster'] ] },
+    ['+15% fire rate'], ['Reload 25% faster, +10% fire rate'], ['+20% fire rate'], ['+1 bullet per shot (70% damage each); shotguns get 25% more pellets'], ['+25% fire rate, reload 30% faster'] ] },
   { id: 'prc', name: 'Precision', color: '#7fc8ff', icon: 'crosshair', nodes: [
-    ['Pierces one more foe'], ['+25% bullet speed, half the spread, +10% damage'], ['Hits arc to a nearby foe'], ['Pierces one more, bounces once'], ['Shots home in, and arc to 2 more foes'] ] },
+    ['Pierces one more foe'], ['+25% bullet speed, half the spread, +15% damage'], ['Hits arc to a nearby foe'], ['Bullets bounce off walls once'], ['Shots home in and pierce one more foe'] ] },
   { id: 'elm', name: 'Element', color: '#c08cff', icon: 'stun', nodes: [
-    ['15% of shots Burn, Ice or Shock'], ['30% of shots carry an element'], ['Elemental hits deal +30% damage'], ['50% of shots carry an element'], ['Every shot carries an element, +30% more elemental damage'] ] },
+    ['20% of shots Burn, Ice or Shock'], ['35% of shots carry an element'], ['Elemental hits deal +35% damage'], ['55% of shots carry an element'], ['Every shot carries an element, +35% more elemental damage'] ] },
   { id: 'bst', name: 'Blast', color: '#ff9f40', icon: 'firestorm', nodes: [
-    ['20% of shots burst on impact'], ['45% of shots burst'], ['Every shot bursts on impact'], ['Bursts are 40% bigger'], ['Bursts are bigger still and hit 50% harder'] ] },
+    ['20% of shots burst on impact (explosive guns: +15% blast damage)'], ['45% of shots burst'], ['Every shot bursts on impact'], ['Bursts are bigger'], ['Bursts are bigger still and hit 20% harder'] ] },
 ];
 const TREE_COST = [1, 1, 2, 2, 2];
 const treeLv = (g, id) => (g && g.tree && g.tree[id]) || 0;
 const treeSpent = g => TREE.reduce((a, br) => a + TREE_COST.slice(0, treeLv(g, br.id)).reduce((x, y) => x + y, 0), 0);
 const treePoints = g => g ? Math.max(0, (g.rank || 0) - treeSpent(g)) : 0;
+// Tree numbers, balanced with a damage-per-second range (2026-11-06): with 8 stars in one path every path lands near
+// 3x damage on a single target; Precision and Blast pay extra against groups instead of more single-target damage.
+let TT = { pow: [0.15, 0.15, 0.25], spdRate: [0.15, 0.1, 0.2, 0.25], extraBulletDmg: 0.7, prcDmg: 1.15, elem: [0, 0.2, 0.35, 0.35, 0.55, 1], elemDmg: [0.35, 0.35],
+  burst: [0, 0.2, 0.45, 1, 1, 1], burstR: [10, 10, 10, 10, 12, 14], prcOwn: [1, 1, 1.2, 1.4, 1.7, 2.1], elemOwn: 1.25, blastCap: 1.2, blastOwn: [1, 1.15, 1.3, 1.5, 1.7, 1.9] };
 function treeStats(g) {   // everything the tree adds to one gun's shots
-  const L = id => treeLv(g, id), p = L('pow'), s = L('spd'), c = L('prc'), e = L('elm'), b = L('bst');
-  return { dmg: (1 + 0.15 * (p >= 1) + 0.15 * (p >= 2) + 0.3 * (p >= 4)) * (c >= 2 ? 1.1 : 1) * (b >= 5 ? 1.5 : 1), powerEvery: p >= 5 ? 3 : p >= 3 ? 5 : 0, powerMul: p >= 5 ? 3 : 2.5,
-    rate: 1 + 0.15 * (s >= 1) + 0.1 * (s >= 2) + 0.2 * (s >= 3) + 0.3 * (s >= 5), reload: (s >= 2 ? 0.75 : 1) * (s >= 5 ? 0.7 : 1), pellets: s >= 4 ? 1 : 0,
-    pierce: (c >= 1) + (c >= 4), bspeed: c >= 2 ? 1.25 : 1, spread: c >= 2 ? 0.5 : 1, chain: (c >= 3) + (c >= 5 ? 2 : 0), bounce: c >= 4 ? 1 : 0, homing: c >= 5 ? 1 : 0,
-    elem: [0, 0.15, 0.3, 0.3, 0.5, 1][e], elemDmg: 1 + 0.3 * (e >= 3) + 0.3 * (e >= 5),
-    burst: [0, 0.2, 0.45, 1, 1, 1][b], burstR: b >= 5 ? 20 : b >= 4 ? 17 : 12 };
+  const L = id => treeLv(g, id), p = L('pow'), s = L('spd'), c = L('prc'), e = L('elm'), b = L('bst'), own = !!(g && g.def && g.def.explode);
+  return { dmg: (1 + TT.pow[0] * (p >= 1) + TT.pow[1] * (p >= 2) + TT.pow[2] * (p >= 4)) * (c >= 2 ? TT.prcDmg : 1) * (b >= 5 ? TT.blastCap : 1) * (own ? TT.blastOwn[b] * TT.prcOwn[c] / (c >= 2 ? TT.prcDmg : 1) : 1),
+    powerEvery: p >= 5 ? 3 : p >= 3 ? 5 : 0, powerMul: p >= 5 ? 3 : 2.5,
+    rate: 1 + TT.spdRate[0] * (s >= 1) + TT.spdRate[1] * (s >= 2) + TT.spdRate[2] * (s >= 3) + TT.spdRate[3] * (s >= 5), reload: (s >= 2 ? 0.75 : 1) * (s >= 5 ? 0.7 : 1), pellets: s >= 4 ? 1 : 0,
+    pierce: (c >= 1) + (c >= 5), bspeed: c >= 2 && !own ? 1.25 : 1, spread: c >= 2 ? 0.5 : 1, chain: c >= 3 ? 1 : 0, bounce: c >= 4 ? 1 : 0, homing: c >= 5 ? 1 : 0,
+    elem: TT.elem[e], elemDmg: (1 + TT.elemDmg[0] * (e >= 3) + TT.elemDmg[1] * (e >= 5)) * (own && e >= 3 ? TT.elemOwn : 1),
+    burst: own ? 0 : TT.burst[b], burstR: TT.burstR[b], blastGrow: own ? [1, 1, 1, 1, 1.15, 1.3][b] : 1 };   // a gun that already explodes gets harder, then bigger, blasts instead
 }
 function learnNode(g, id) {   // spend points on the next step of a path
   const lv = treeLv(g, id); if (lv >= 5 || treePoints(g) < TREE_COST[lv]) return false;
@@ -1477,7 +1489,7 @@ function spawnWave() {
     enemies.push({ id, d, spr: d.spr, x, y, hp: d.hp * hpScale, maxHp: d.hp * hpScale, r: d.r, spawn: 0.7, t: rnd() * 3, fireT: 0.9 + rnd() * 0.8,
       tele: 0, vx: 0, vy: 0, flash: 0, stun: 0, wander: rnd() * TAU, face: 1, state: 'idle', fireproof: themeOf(run.floor) === 2 && ['imp', 'chort'].includes(id) });   // demons of the Ember Depths are fireproof
     const e = enemies[enemies.length - 1], dd = depth(), roll = rnd();   // deeper down, some foes are Armoured or Dread: tougher, and they look it
-    if (roll < clamp((dd - 9) / 30, 0, 0.4)) { e.vt = 2; e.hp = e.maxHp *= 2.2; } else if (roll < clamp((dd - 4) / 14, 0, 0.75)) { e.vt = 1; e.hp = e.maxHp *= 1.5; }
+    if (roll < clamp((dd - 12) / 30, 0, 0.4)) { e.vt = 2; e.hp = e.maxHp *= 2.2; } else if (roll < clamp((dd - 7) / 14, 0, 0.75)) { e.vt = 1; e.hp = e.maxHp *= 1.5; }   /* later since 2026-11-06: early guns are rarer now */
   }
   // elites: from floor 2 a wave may promote one foe, with one of three affixes (more often in deeper zones)
   const d = depth(), cand = enemies.filter(e => !e.elite && !e.gen && !e.minion && !e.mini && e.id !== 'tiny_zombie' && e.spawn > 0);
@@ -1580,13 +1592,13 @@ function fireGun(g, dt, tu) {   // tu: a Sentry Turret firing a half-damage copy
   const def = g.def, m = playerMods(), aim = tu ? tu.aim : P.aim, mul = tu ? 0.5 : 1;
   if (def.kind === 'beam') { fireBeam(g, def, m, dt, tu); return; }
   const ts = treeStats(g), power = ts.powerEvery && !tu && ((g.shotN = (g.shotN || 0) + 1) % ts.powerEvery === 0);   // skill tree: every 5th (or 3rd) trigger pull is a power shot
-  const n = def.pellets + (def.ring || def.kind === 'beam' ? 0 : m.pellets + ts.pellets), fan = n > 1 && def.pellets === 1 ? 10 : def.spread;   // the Bandolier (and the Speed path) fan out single-shot guns
+  const extra = ts.pellets ? (def.pellets > 1 ? Math.max(1, Math.round(def.pellets * 0.25)) : 1) : 0, n = def.pellets + (def.ring || def.kind === 'beam' ? 0 : m.pellets + extra), fan = n > 1 && def.pellets === 1 ? 10 : def.spread;   // the Bandolier (and the Speed path) fan out single-shot guns
   for (let k = 0; k < n; k++) {
     let ang = def.ring ? aim + k * TAU / n : aim + (n > 1 ? (k / (n - 1) - 0.5) * fan * Math.PI / 180 : 0) + (rnd() - 0.5) * def.spread * 0.4 * Math.PI / 180 * m.spread;
     if (n === 1) ang = aim + (rnd() - 0.5) * def.spread * Math.PI / 180 * m.spread * ts.spread;
     const sp = (def.speed || 240) * m.bspeed * ts.bspeed * (def.kind === 'flame' ? 0.8 + rnd() * 0.4 : 1);
     const { x: mx, y: my } = tu ? { x: tu.x + Math.cos(aim) * 10, y: tu.y - 14 + Math.sin(aim) * 8 } : muzzle(def);
-    const dmgMul = (g.chargeMul || 1) * rankMul(g) * (power ? ts.powerMul : 1);
+    const dmgMul = (g.chargeMul || 1) * rankMul(g) * (power ? ts.powerMul : 1) * (extra && def.pellets === 1 ? TT.extraBulletDmg : 1);
     const b = { x: mx, y: my, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, t: 0, life: (def.life || 1.2) * (def.kind === 'flame' ? 1 : m.bspeed),
       dmg: def.dmg * m.dmg * dmgMul * mul * (g.mk || 1) * (1 + 0.03 * gunLevel(def.id)), r: (def.size || 2) * (def.charge ? 0.8 + 2.4 * (g.chargeFrac || 0) : 1), pierce: (def.pierce || 0) + m.pierce, bounce: (def.bounce || 0) + m.bounce,
       homing: (def.homing || 0) + m.homing, explode: def.explode || 0, kind: def.kind, color: def.color, def, hit: new Set(), split: def.split || 0, splitAt: def.splitAt || 0,
@@ -1595,7 +1607,7 @@ function fireGun(g, dt, tu) {   // tu: a Sentry Turret firing a half-damage copy
     if (b.elem && !def.elem) b.color = ELEM[b.elem].color;   // relic-element bullets wear their element's colour
     if (def.id === 'glacier' || (def.id === 'faithful' && (g.alt = !g.alt))) b.ghost = 1;   // these pass straight through enemy bullets
     if (m.boomChance && rnd() < m.boomChance && !b.explode) b.explode = 16;
-    b.pierce += ts.pierce; b.chain += ts.chain; b.bounce += ts.bounce; b.homing += ts.homing;   /* skill tree */ if (!b.explode && ts.burst && rnd() < ts.burst) b.explode = ts.burstR;
+    b.pierce += ts.pierce; b.chain += ts.chain; b.bounce += ts.bounce; b.homing += ts.homing;   /* skill tree */ if (!b.explode && ts.burst && rnd() < ts.burst) { b.explode = ts.burstR; b.treeBurst = 1; } else if (b.explode && ts.blastGrow > 1) b.explode *= ts.blastGrow;
     if (!b.elem && ts.elem && rnd() < ts.elem) { b.elem = pick(['burn', 'chill', 'shock']); b.color = ELEM[b.elem].color; } if (b.elem && ts.elemDmg > 1) b.dmg *= ts.elemDmg; if (power) { b.r *= 1.8; b.power = 1; }
     if (tu && (def.kind === 'orbit' || def.kind === 'boomer')) { b.kind = 'bullet'; b.life = 1; b.child = 1; pbul.push(b); continue; }   // a turret can't orbit you, so these fly straight
     if (tu) b.child = 1;
@@ -1620,8 +1632,9 @@ function fireGun(g, dt, tu) {   // tu: a Sentry Turret firing a half-damage copy
     if (def.kind === 'flame') puff(500, 0.08, 0.025); else if (def.explode && def.kind !== 'bullet') puff(400, 0.14, 0.06); else puff(1400 + rnd() * 400, 0.06, 0.045); }
 }
 function rollElem(m) { for (const el of ['burn', 'chill', 'shock']) if (m[el + 'Chance'] && rnd() < m[el + 'Chance']) return el; return m.elemChance && rnd() < m.elemChance ? pick(['burn', 'chill', 'shock']) : null; }
+const beamTree = ts => ts.rate * (ts.pellets ? 1.4 : 1) * (ts.powerEvery ? 1 + (ts.powerMul - 1) / ts.powerEvery : 1) * (1 + 0.6 * ts.elem) * (ts.elemDmg > 1 ? ts.elemDmg * 0.85 : 1) * (1 + 0.8 * ts.burst) * (ts.chain ? 1.45 : 1) * (ts.pierce ? 1.1 : 1);   // a beam can't use shot tricks, so the tree turns them into beam damage
 function fireBeam(g, def, m, dt, tu) {
-  const n = def.prism || 1, dps = def.dps * m.dmg * (tu ? 0.5 : 1) * (g.mk || 1) * rankMul(g);
+  const ts = treeStats(g), n = def.prism || 1, dps = def.dps * m.dmg * (tu ? 0.5 : 1) * (g.mk || 1) * rankMul(g) * beamTree(ts);
   for (let k = 0; k < n; k++) {
     const ang = (tu ? tu.aim : P.aim) + (k - (n - 1) / 2) * 0.22;
     const mz = tu ? { x: tu.x + Math.cos(ang) * 10, y: tu.y - 14 + Math.sin(ang) * 8 } : muzzle(def, ang); let x = mz.x, y = mz.y; const sx = x, sy = y; let hitE = null;
@@ -2104,7 +2117,7 @@ function update(dt) {
         if (b.boom && rnd() < b.boom) explode(b.x, b.y, b.explode, b.dmg * 3, b);
         if (playerMods().splitChance && rnd() < playerMods().splitChance && !b.child) spawnSplit(b, 2);
         if (b.kind === 'bubble' && b.split) { spawnSplit(b, b.split); b.dead = true; break; }
-        if (b.pierce > 0) b.pierce--; else { b.dead = true; if (b.explode && b.kind !== 'flame') explode(b.x, b.y, b.explode, b.dmg, b); if (b.shrapnel) spawnSplit(b, b.shrapnel); break; }
+        if (b.pierce > 0) { b.pierce--; if (b.treeBurst) explode(b.x, b.y, b.explode, b.dmg, b); } else { b.dead = true; if (b.explode && b.kind !== 'flame') explode(b.x, b.y, b.explode, b.dmg, b); if (b.shrapnel) spawnSplit(b, b.shrapnel); break; }
       }
     }
   }
