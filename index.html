@@ -66,6 +66,7 @@
   .pbtn.ghost { color:#d2aa99; border-image-source:url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAQCAYAAAB3AH1ZAAAAlElEQVR4nGP8//8/AwyI8soiODQErz8/ZoSxWZAtNpCQoIf9cPtADgE7ANlyR40/NHeAo4YIQ/+BN2A2owiPzH96Wo4MQI5gQriKvpb7GkLsY2IYILD5PMvAOsB3oEMABpgYBhgwDZTFo2lg86AJgdefHzNeePGC7pY79X8A1wVMMEFY2UyMZmJpXGyQ5TDAONDVMQDNg0dwgfXbEwAAAABJRU5ErkJggg==); }
   .pbtn.ghost.on { color:#241805; border-image-source:url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAQCAYAAAB3AH1ZAAAA6klEQVR4nGP8//8/AwyI8soiODQErz8/ZoSxWZAt3lcoQA/74faBHAJ2ALLlHOFGeDX/WHkOrAZEw9Qji8H0w+SxgUIHEYb+A2/AbEYRHpn/IMtBGlmkKhj+POvAahE1webzEH+DHMGELIFsOSFfUAJ8Df/A2UwMdAboUcwEY9Da1+j2YDiAg0DioxVggjGQU/WARAEHEdmHplHwA0mClqGAMwRAALkgoYVjsJUrTOiKQApgDiHGcmR1yOqxicMshxVEIMAIqoxAZTOoeEQvJGgBkEtBUF0AdwBIEOYIWgNYPQB3AAwMRHUMAInYf7mQiWgHAAAAAElFTkSuQmCC); }
   .panel.station.pause { width:min(360px, calc(100% - 16px)); }
+  .pbtn.buy { font-size:15px; min-height:26px; min-width:72px; padding:2px 10px; gap:4px; }
   .pbtn.big { display:block; width:100%; font-size:16px; min-height:30px; margin-top:10px; }
   .opt-row { display:flex; justify-content:space-between; align-items:center; gap:10px; color:#e0d6cc; font-size:13px; font-weight:700; margin-top:4px; }
   .opt-row .pbtn { margin-top:2px; min-width:110px; }
@@ -1204,10 +1205,10 @@ function paintGunIcons(root) {   // fill the gun canvases at up to 3x (the guns 
     const edge = shape('#b8a8c8'); for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) g.drawImage(edge, m + dx * m, m + dy * m);   // a light outline...
     g.drawImage(shape('#0d0a10'), m, m); g.filter = 'grayscale(1) brightness(0.3)'; g.globalAlpha = 0.55; g.drawImage(GUNIMG, b.x0, GS.rows[id] * GS.cell + b.y0, w, h, m, m, w * k, h * k); });   // ...around a black shape with the gun's own lines faintly showing: an unknown fusion
 }
-const costHtml = c => `${ico('ember', 1)}${c[0]}${c[1] ? ` ${ico('part', 1)}${c[1]}` : ''}`;
+const costHtml = (c, sc = 1) => [c[0] ? `${ico('ember', sc)}${c[0]}` : '', c[1] ? `${ico('part', sc)}${c[1]}` : ''].filter(Boolean).join(' ') || 'Free';   // only the currencies a price actually uses
 const pips = (lv, max) => `<div class="pips">${Array.from({ length: max }, (_, i) => `<i class="${i < lv ? 'on' : ''}"></i>`).join('')}</div>`;
 function card({ icon, title, desc, now, lv, max, offer, owned, locked, extra = '' }) {
-  const btn = offer ? (locked ? `<button class="pbtn" disabled>${ico('lock', 1)}${locked}</button>` : `<button class="pbtn" data-buy="${offer.key}" ${canPay(offer.cost) ? '' : 'disabled'}>${costHtml(offer.cost)}</button>`) : '';
+  const btn = offer ? (locked ? `<button class="pbtn buy" disabled>${ico('lock', 1)}${locked}</button>` : `<button class="pbtn buy" data-buy="${offer.key}" ${canPay(offer.cost) ? '' : 'disabled'}>${costHtml(offer.cost, 1.5)}</button>`) : '';
   return `<div class="card ${owned ? 'owned' : ''} ${locked ? 'locked' : ''}"><div class="slot">${icon}</div><div class="body"><b>${title}</b>${max ? pips(lv, max) : ''}<small>${desc}</small>${now ? `<small class="now">${now}</small>` : ''}${btn}${extra}</div></div>`;
 }
 function renderStation(id) {
