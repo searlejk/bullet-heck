@@ -562,7 +562,7 @@ async function cloudInit() {
     const [db, user] = await Promise.all([window.claude.use('db'), window.claude.use('user')]); if (!db || !user) return;
     const id = await user.id(); if (!id) return;
     const ref = db.doc('saves/' + id), snap = await ref.get(), remote = snap.exists ? JSON.parse(snap.data().json || 'null') : null;
-    cloud.ref = ref; cloud.on = true; cloud.again = false; cloud.remotePlayed = played(remote);   // saves made while loading are decided here, not pushed blindly
+    cloud.ref = ref; cloud.db = db; cloud.uid = id; cloud.on = true; cloud.again = false; cloud.remotePlayed = played(remote);   // saves made while loading are decided here, not pushed blindly
     // the cloud copy wins when it is newer, but an unplayed save (a fresh device) never replaces a played one
     if (remote && played(remote) && !aiWatch && (!played(save) || (remote.savedAt || 0) > (save.savedAt || 0))) adoptSave(remote);
     else if (!remote || !played(remote) || played(save)) cloud.again = true;
@@ -999,6 +999,7 @@ function newRun() {
   run = { floor: 1, start: Date.now(), t: 0, coinsBy: {}, spent: 0, shopVisits: [], buys: [], roomTimes: [], reactions: 0, reactKinds: {}, elites: 0, activeUses: 0, elemRooms: 0, reactRooms: 0, rooms: 0, guns: 1, items: 0, highTier: 0, sincePickup: 0, killer: '', shots: 0, hits: 0, roomsSeen: 0,
     firstChestBump: Math.min(2, Math.max(0, (save.starterLv[hero.gun] || 0) - 1)), mods: [], curses: [], pacts: (save.pacts || []).slice(), challenge: save.challenge || null, flavour: null, nextMods: null, choices: [], embers: 0, bestBefore: save.bestFloor, end: '' };
   session.runs++;
+  if (!BOT_MODE && !aiWatch) logStartRun();   // the play log: this run, level by level
   enterFloor(1);
 }
 function chaosFor(f) {   // how unpredictable enemy timing and patterns are on this floor
@@ -1006,7 +1007,8 @@ function chaosFor(f) {   // how unpredictable enemy timing and patterns are on t
 }
 const luckFor = () => Math.min(0.3, 0.06 * save.lossStreak);   // hidden pity after lost runs
 function enterFloor(f) {
-  run.floor = f; floorStats(f).a++; persist();
+  if (logOn()) logLevelEnd();
+  run.floor = f; if (run.log) logLevelStart(); floorStats(f).a++; persist();
   run.mods = run.nextMods || rollMods(f); run.nextMods = null;
   P.blocksLeft = (P.blocks || 0) + (hasSyn('defense') ? 1 : 0); if (f > 1 && hasSkill('vit3')) P.hp = Math.min(P.maxHp, P.hp + 1);   // Chain Shirt refills, Second Wind heals
   (run.flavourLog || (run.flavourLog = [])).push(run.flavour || '-'); (run.modLog || (run.modLog = [])).push(run.mods.join('+') || '-');
@@ -1646,7 +1648,7 @@ function fireGun(g, dt, tu) {   // tu: a Sentry Turret firing a half-damage copy
       b.life = def.life; pbul.push(b); if (orbs.length < 5) pbul.push(Object.assign({}, b, { hit: new Set() })); continue; }
     if (def.kind === 'mortar') { b.tx = clamp(tu ? tu.tx : input.mx, X0, X1); b.ty = clamp(tu ? tu.ty : input.my, Y0, Y1); b.sx = mx; b.sy = my; b.life = 0.9; b.pierce = 0; }
     if (def.kind === 'hole') { b.pierce = 99; }
-    pbul.push(b);
+    pbul.push(b); if (!tu && run.lv) run.lv.fired++;   // play log: bullets fired
   }
   if (tu) { parts.push({ x: tu.x + Math.cos(aim) * 12, y: tu.y - 14 + Math.sin(aim) * 10, vx: 0, vy: 0, life: 0.05, t: 0, size: 10, name: 'light_01', color: def.color, glow: 1 }); if (T_ - lastShotSfx > 0.06) { lastShotSfx = T_; puff(1600, 0.03, 0.02); } return; }
   run.shots++; if (room.guard === 'asleep') wakeGuard();
@@ -1869,7 +1871,7 @@ const confused = () => !!decoyLost;   // the decoy just vanished: foes keep to w
 function explode(x, y, rad, dmg, b) {
   if (b) rad *= 1 + playerMods().blastMul;
   if (b && b.def && b.def.id === 'rpg' && dist(x, y, P.x, P.y - 6) < rad * 0.75) hurtPlayer('your own rocket', 2);   // too close to your own rocket: a whole heart
-  for (const e of enemies) if (!e.dead && dist(x, y, e.x, e.y - (e.hy || 6)) < rad + e.r) damageEnemy(e, dmg, (e.x - x) / rad, (e.y - y) / rad, true);
+  for (const e of enemies) if (!e.dead && dist(x, y, e.x, e.y - (e.hy || 6)) < rad + e.r) { damageEnemy(e, dmg, (e.x - x) / rad, (e.y - y) / rad, true); if (b && run.lv && !b.child && !b.counted) { b.counted = 1; run.lv.hit++; } }
   for (const c of room.crates) if (dist(x, y, c.x, c.y) < rad) c.hp = 0;
   waves.push({ x, y, r0: rad * 0.3, r1: rad * 1.2, life: 0.3, t: 0, color: '#ffcf6b' });
   for (let k = 0; k < 10; k++) parts.push({ x, y, vx: (rnd() - 0.5) * rad * 5, vy: (rnd() - 0.5) * rad * 5, life: 0.4, t: 0, size: rad * 0.7, name: 'smoke_08', color: '#ffb36b', glow: 1, grow: -rad });
@@ -1893,7 +1895,7 @@ function hurtPlayer(src, dmg = depth() >= 12.5 ? 2 : 1) {
   const m = playerMods();
   if (m.armor && !P.armorUsed) { P.armorUsed = true; P.iframes = 0.8; texts.push({ icon: 'shield', x: P.x, y: P.y - 24, t: 0 }); tone(900, 0.1, 'triangle', 0.05); clearNear(56); return; }
   if (P.blocksLeft > 0) { P.blocksLeft--; P.iframes = 0.8; texts.push({ icon: 'shield', x: P.x, y: P.y - 24, t: 0 }); tone(900, 0.1, 'triangle', 0.05); clearNear(100); waves.push({ x: P.x, y: P.y - 6, r0: 8, r1: 100, life: 0.35, t: 0, color: '#d9e0e8' }); return; }   // Chain Shirt: a block is a small blank
-  P.hp -= dmg; run.hurts = (run.hurts || 0) + 1; run.hpLost = (run.hpLost || 0) + dmg; run.bossHits = (run.bossHits || 0) + 1; P.iframes = 1.0; P.hurtT = T_; hitStop = 0.07; shake = 7; flash = 1; clearNear(56);   // research: clear nearby bullets on hit
+  P.hp -= dmg; if (run.lv) { run.lv.dmg += dmg; run.lv.hitsTaken++; } run.hurts = (run.hurts || 0) + 1; run.hpLost = (run.hpLost || 0) + dmg; run.bossHits = (run.bossHits || 0) + 1; P.iframes = 1.0; P.hurtT = T_; hitStop = 0.07; shake = 7; flash = 1; clearNear(56);   // research: clear nearby bullets on hit
   tone(150, 0.25, 'triangle', 0.09, 0.6); muffleMusic(900, 1);
   run.killer = src; hint('roll');
   if (P.hp <= 0 && hasSkill('lan4') && !run.lastStand && !run.camp) {   // Last Stand: once a run, survive on one heart
@@ -1910,7 +1912,7 @@ let bombs = [];
 function useBlank() {
   if (P.blanks <= 0 || state !== 'play' || bombs.length) return;
   if (!enemies.some(e => !e.dead)) { floatText('No foes to bomb', P.x, P.y - 26, '#b0a090'); tone(200, 0.06, 'square', 0.02); return; }   // bombs are for fights: none in an empty room or the Camp
-  P.blanks--; hintDone('blank');
+  P.blanks--; hintDone('blank'); if (run.lv) run.lv.bombsUsed++;
   const reach = Math.min(70, Math.max(24, dist(P.x, P.y, input.mx, input.my))), tx = clamp(P.x + Math.cos(P.aim) * reach, X0 + 4, X1 - 4), ty = clamp(P.y + Math.sin(P.aim) * reach, Y0 + 4, Y1 - 4);
   bombs.push({ sx: P.x, sy: P.y - 8, tx, ty, x: P.x, y: P.y, h: 0, t: 0, fly: 0.32, fuse: 0.22 });
   tone(420, 0.1, 'triangle', 0.05, 1.4);
@@ -1994,7 +1996,31 @@ function chooseDescent(i) {
 const runEmbers = (share = 1) => Math.round((run.embers + Math.floor(P.coins / 10)) * share * (hasSkill('for5') ? 1.2 : 1) * (1 + 0.15 * (run.pacts || []).length) * (run.challenge === 'storm' ? 2 : 1));   // what this run carries (the HUD shows it; a death banks half)
 function bankEmbers(share) { run.banked = runEmbers(share);
   const lvl = (run.pacts || []).length; if (lvl) { save.pactBest = save.pactBest || {}; save.pactBest[lvl] = Math.max(save.pactBest[lvl] || 0, run.floor); } save.embers = (save.embers || 0) + run.banked; save.parts += run.parts || 0; persist(); }
+// ---------- the play log (2026-11-06, owner's request) ----------
+// Every run a person plays (never the AI) is written down level by level, so Claude can compare real play with the
+// test bot and tune the game: time, damage taken, hearts, bombs, coins, accuracy and each gun's rank and tree.
+// Kept in the save (the last PLAYLOG_LOCAL runs) and, on claude.ai, one private database document per run under
+// data/users/<player id>/run_<id>, which only that player can read; it is updated after every level, so a run that
+// is closed half way is still kept.
+const PLAYLOG_LOCAL = 100;
+const logOn = () => !!(run && run.log && !BOT_MODE && !aiWatch && !tut && !lab);
+function logStartRun() { run.log = { v: 1, id: Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36), date: new Date().toISOString(), hero: P.hero.name, maxHp: P.maxHp, challenge: run.challenge || null, pacts: (run.pacts || []).length, camp: { skills: save.skills.length, gunUps: Object.values(save.gunUps || {}).reduce((a, b) => a + b, 0), armor: save.armor && save.armor.eq || null, starterMk: (save.starterLv || {})[P.hero.gun] || 0, sidearm: save.sidearm || null }, levels: [] }; run.lv = null; }
+function logLevelStart() { if (!run || !run.log) return; run.lv = { level: run.floor, t0: run.t, dmg: 0, hitsTaken: 0, healed: 0, fired: 0, hit: 0, bombsUsed: 0, rolls: 0, coinsIn: 0, spent0: run.spent || 0, kills0: P.kills || 0, hp0: P.hp, rooms0: run.rooms || 0 }; }
+function logLevelEnd(end) {
+  if (!run || !run.log || !run.lv) return; const v = run.lv; run.lv = null;
+  run.log.levels.push({ level: v.level, secs: Math.round(run.t - v.t0), hpStart: v.hp0, hpEnd: Math.max(0, P.hp), maxHp: P.maxHp, dmgTaken: v.dmg, hitsTaken: v.hitsTaken, healed: v.healed,
+    accuracy: v.fired ? +(v.hit / v.fired).toFixed(3) : null, bulletsFired: v.fired, bombs: P.blanks, bombsUsed: v.bombsUsed, rolls: v.rolls, coins: P.coins, coinsIn: v.coinsIn, coinsSpent: (run.spent || 0) - v.spent0,
+    kills: (P.kills || 0) - v.kills0, rooms: (run.rooms || 0) - v.rooms0, keys: P.keys, items: P.items.length, active: P.active ? P.active.id : null, embers: runEmbers(), parts: run.parts || 0, end: end || null,
+    guns: P.guns.map(g => ({ id: g.def.id, name: g.def.name, tier: g.def.tier, rank: g.rank || 0, xp: g.xp || 0, tree: g.tree || {}, dps: Math.round(gunDps(g.def) * (g.mk || 1) * rankMul(g)) })) });
+  logSave();
+}
+function logSave(done) {   // keep it in the save and, on claude.ai, in the player's private database document
+  if (!logOn() && !(done && run && run.log && !BOT_MODE && !aiWatch)) return; const L = run.log; if (done) L.done = true;
+  const all = save.playLog || (save.playLog = []), i = all.findIndex(r => r.id === L.id); if (i >= 0) all[i] = L; else all.push(L); while (all.length > PLAYLOG_LOCAL) all.shift();
+  if (cloud.db && cloud.uid) cloud.db.collection('data/users/' + cloud.uid).doc('run_' + L.id).set({ json: JSON.stringify(L), at: Date.now(), floor: run.floor, done: !!L.done }).catch(() => {});
+}
 function recordRun(won) {
+  if (run.log && !BOT_MODE && !aiWatch) { logLevelEnd(won ? 'won' : (run.killer || 'died')); Object.assign(run.log, { floor: run.floor, won: !!won, killer: run.killer || null, mins: +(run.t / 60).toFixed(1), embers: run.banked || 0, parts: run.parts || 0 }); logSave(true); }
   save.runs.push({ hero: P.hero.name, floor: run.floor, won, firstFind: run.firstFindT === undefined ? null : Math.round(run.firstFindT), pacts: (run.pacts || []).length, challenge: run.challenge || null, embers: run.banked || 0, mins: +(run.t / 60).toFixed(1), secs: Math.round((Date.now() - run.start) / 1000), rooms: run.roomsSeen, guns: run.guns, items: run.items, killer: won ? '' : run.killer, day: today() });
   if (save.runs.length > 200) save.runs.shift();
   const nh = !run.challenge && nextHero(); if (nh) { save.heroesUnlocked.push(nh); if (save.lastRun) save.lastRun.newHero = nh; }   // one new hero per finished run
@@ -2147,6 +2173,7 @@ function update(dt) {
       if (e.dead || e.spawn > 0 || b.hit.has(e)) continue;
       if (dist(b.x, b.y, e.x, e.y - (e.hy || 6)) < e.r + b.r + 1) {
         b.hit.add(e);
+        if (run.lv && !b.child && !b.counted) { b.counted = 1; run.lv.hit++; }   // play log: a bullet that hit something
         { const kk = Math.min(1, Math.hypot(b.vx, b.vy) / 240) * (b.knock || 1), ka = Math.atan2(b.vy, b.vx); damageEnemy(e, b.dmg, Math.cos(ka) * kk, Math.sin(ka) * kk); }
         if (b.elem) applyElem(e, b.elem, b.dmg);
         if (b.chain) chainZap(e, b.chain, b.dmg * 0.6);
@@ -2369,8 +2396,8 @@ function roomCleared() {
 function collect(p) {
   p.taken = true;
   switch (p.kind) {
-    case 'coin': P.coins += p.n || 1; run.coinsBy[run.floor] = (run.coinsBy[run.floor] || 0) + (p.n || 1); tone(1046, 0.06, 'triangle', 0.05); tone(1318, 0.08, 'triangle', 0.04); break;
-    case 'heart': P.hp = Math.min(P.maxHp, P.hp + 2); tone(660, 0.12, 'sine', 0.07); break;
+    case 'coin': if (run && run.lv) run.lv.coinsIn += p.n || 1; P.coins += p.n || 1; run.coinsBy[run.floor] = (run.coinsBy[run.floor] || 0) + (p.n || 1); tone(1046, 0.06, 'triangle', 0.05); tone(1318, 0.08, 'triangle', 0.04); break;
+    case 'heart': if (run && run.lv) run.lv.healed += Math.min(2, P.maxHp - P.hp); P.hp = Math.min(P.maxHp, P.hp + 2); tone(660, 0.12, 'sine', 0.07); break;
     case 'ammo': { const g = curGun(); if (g.ammo !== Infinity) g.ammo = maxAmmo(g.def); for (const q of P.guns) if (q !== g && q.ammo !== Infinity) q.ammo = Math.min(maxAmmo(q.def), q.ammo + Math.ceil(maxAmmo(q.def) * 0.2));
       tone(440, 0.1, 'square', 0.03); break; }
     case 'part': run.parts = (run.parts || 0) + 1; questProgress('parts'); tone(760, 0.08, 'square', 0.03); tone(1140, 0.1, 'triangle', 0.04); break;
@@ -2930,6 +2957,7 @@ function drawTouchUi() {
 }
 const toLogical = e => ({ x: (e.clientX * dpr - offX) / scale, y: (e.clientY * dpr - offY) / scale });
 function startRoll() {
+  if (run && run.lv && state === 'play' && !P.roll && P.rollCd <= 0) run.lv.rolls++;
   if (P.roll || P.rollCd > 0 || state !== 'play') return;
   let dx = (input.keys.d ? 1 : 0) - (input.keys.a ? 1 : 0), dy = (input.keys.s ? 1 : 0) - (input.keys.w ? 1 : 0);
   if (input.touchMove) { dx = input.touchMove.dx; dy = input.touchMove.dy; }
@@ -3277,7 +3305,7 @@ function frame(now) {
 // Ten seeded rooms at depth 3.4 (floor 3), the same layouts and waves for every gun; the player can't be hurt, so only
 // clearing speed counts. ?bot=guns runs every gun headless and ranks them; the pause screen's "Bot gun test" lets you
 // watch any gun go through the course.
-const LAB_RESULTS = {judge:  182,  quake:  191,  arclance:  195,  sunfire:  198,  riot:  203,  pinball:  206,  impaler:  206,  hivemind:  211,  hornet:  213,  warden:  214,  thunderclap:  217,  saw:  218,  goldmini:  222,  rpg:  223,  stormcaller:  230,  rail:  236,  prism:  237,  mortar:  252,  minigun:  258,  faithful:  187,  dragon:  262,  cluster:  262,  swarm:  266,  bounceshot:  284,  awp:  284,  nova:  291,  hmg:  303,  zapper:  306,  twinuzi:  315,  blackhole:  239,  glacier:  194,  laser:  322,  gl:  322,  splitter:  338,  combat:  348,  homer:  355,  flamer:  356,  marksman:  360,  burst:  362,  ricochet:  374,  flare:  383,  ar:  383,  uzi:  391,  boomer:  306,  bubble:  407,  bouncer:  438,  revolver:  438,  nailer:  442,  pump:  424,  hunting:  463,  pea:  485,  snub_s:  503,  spark_s:  506,  rusty:  525,  twin_s:  533,  scatter_s:  557,  sawoff:  596};   // course seconds per gun, ?bot=guns&passes=3 after the tuning below (2026-10-30)
+const LAB_RESULTS = {goldmini: 202, prism: 204, rpg: 213, dragon: 217, minigun: 219, saw: 230, rail: 230, boomer: 237, blackhole: 256, mortar: 261, hmg: 266, swarm: 267, bounceshot: 275, awp: 276, laser: 282, cluster: 290, twinuzi: 292, nova: 297, zapper: 309, gl: 333, splitter: 342, combat: 345, flamer: 367, ricochet: 374, burst: 391, uzi: 398, ar: 405, flare: 415, homer: 415, marksman: 419, nailer: 420, pump: 435, hunting: 465, bouncer: 476, pea: 492, revolver: 494, bubble: 496, twin_s: 533, snub_s: 563, spark_s: 563, rusty: 576, sawoff: 612, scatter_s: 636};   // course seconds per gun (lower is better), bot gun test of 2026-11-06, 2 passes each
 const LAB_ROOMS = [11, 23, 37, 41, 59, 67, 73, 89, 97, 103], LAB_FLOOR = 3, LAB_CAP = 120;
 let lab = null;
 function startGunLab(gunId, watch) {
@@ -3460,15 +3488,15 @@ if (BOT_MODE) { const s = document.createElement('script'); s.src = 'tests/gunli
     const ok = p => !bot.ignore.has(`${room.gx},${room.gy}:${Math.round(p.x)},${Math.round(p.y)}`);
     const free = room.pickups.filter(p => !p.price && ['coin', 'ammo', 'blank', 'key'].includes(p.kind) || (p.kind === 'heart' && !p.price && P.hp < P.maxHp));
     if (free.filter(ok).length) return nearest(free.filter(ok));
-    const weakest = () => Math.min(...P.guns.map(g => gunDps(g.def)));   // two-gun limit: only take a floor gun that beats the weaker one it carries
-    const open = room.pickups.filter(p => !p.price && !p.used && (['chest', 'item', 'vessel'].includes(p.kind) || (p.kind === 'gun' && !p.dropped && (P.guns.length < 2 || gunDps(GUNS[p.gun]) > weakest() * 1.1)) || (p.kind === 'cage' && room.cleared) || (p.kind === 'shrine' && P.maxHp > 4 && P.hp >= 4)) || (p.kind === 'active' && !p.price && !P.active)).filter(ok);
+    const weakest = () => Math.min(...P.guns.map(g => gunValue(g.def) * rankMul(g)));   // two-gun limit: only take a floor gun that beats the weaker one it carries
+    const open = room.pickups.filter(p => !p.price && !p.used && (['chest', 'item', 'vessel'].includes(p.kind) || (p.kind === 'gun' && !p.dropped && (P.guns.length < 2 || gunValue(GUNS[p.gun]) * rankMul({ rank: p.rank || 0 }) > weakest() * 1.1)) || (p.kind === 'cage' && room.cleared) || (p.kind === 'shrine' && P.maxHp > 4 && P.hp >= 4)) || (p.kind === 'active' && !p.price && !P.active)).filter(ok);
     if (open.length) return Object.assign({ use: 1 }, nearest(open));
     const junk = room.pickups.filter(p => p.kind === 'gun' && !p.price && !p.taken && P.guns.length >= 2 && ok(p) );   // like a player: melt guns it won't carry into the one in hand
     if (junk.length) return Object.assign({ scrap: 1 }, nearest(junk));
     const fz = room.pickups.find(p => p.kind === 'fuser' && !p.used);   // a fusion device: fuse whenever its two guns can
     if (fz && ok(fz) && P.guns.length === 2 && fusionPlan(P.guns[0].def, P.guns[1].def).def) return Object.assign({ use: 1 }, fz);
     if (room.type === 'shop' || room.type === 'event') {
-      const want = room.pickups.filter(ok).filter(p => p.price && !p.used && P.coins >= p.price && (p.kind === 'heart' ? P.hp <= P.maxHp - 2 : p.kind === 'gun' ? P.coins >= p.price + 10 && (P.guns.length < 2 || gunDps(GUNS[p.gun]) > weakest() * 1.15) : p.kind === 'item' ? P.coins >= p.price + 10 : p.kind === 'rank' ? P.coins >= p.price + 15 && (curGun().rank || 0) < RANK_TOP : p.kind === 'active' ? !P.active && P.coins >= p.price + 6 : p.kind === 'gamble' ? P.coins >= p.price + 15 : p.kind === 'key' ? P.keys < 1 && P.coins >= p.price + 12 : p.kind === 'ammo' ? lowAmmo() : p.kind === 'blank' && P.blanks < 1));
+      const want = room.pickups.filter(ok).filter(p => p.price && !p.used && P.coins >= p.price && (p.kind === 'heart' ? P.hp <= P.maxHp - 2 : p.kind === 'gun' ? P.coins >= p.price + 10 && (P.guns.length < 2 || gunValue(GUNS[p.gun]) > weakest() * 1.15) : p.kind === 'item' ? P.coins >= p.price + 10 : p.kind === 'rank' ? P.coins >= p.price + 15 && (curGun().rank || 0) < RANK_TOP : p.kind === 'active' ? !P.active && P.coins >= p.price + 6 : p.kind === 'gamble' ? P.coins >= p.price + 15 : p.kind === 'key' ? P.keys < 1 && P.coins >= p.price + 12 : p.kind === 'ammo' ? lowAmmo() : p.kind === 'blank' && P.blanks < 1));
       if (want.length) return Object.assign({ use: 1 }, nearest(want));
     }
     if (room.crack && P.blanks >= 2) { const c = crackSpot(room), t = { x: clamp(c.x, X0 + 14, X1 - 14), y: clamp(c.y, Y0 + 14, Y1 - 14), bomb: c }; if (ok(t)) return t; }   // spare bomb: try the cracked wall
@@ -3479,6 +3507,10 @@ if (BOT_MODE) { const s = document.createElement('script'); s.src = 'tests/gunli
     const d = DOOR[step], [dx, dy] = DIRS[step];
     return { x: d.x + dx * 12, y: d.y + dy * 12, door: step };
   }
+  // how good a gun really is: its measured course time from the bot gun test (LAB_RESULTS), not its paper damage per
+  // second, which badly misjudges rockets, saws and mortars (blast and homing don't show in it). A fused gun counts as
+  // its base gun plus 30%; a gun the test never ran falls back to paper dps scaled to the same range.
+  const gunValue = d => { const t = LAB_RESULTS[d.fusedFrom || d.id]; return (t ? 30000 / t : gunDps(d) * 0.75) * (d.fusedFrom ? 1.3 : 1); };
   const nearest = list => list.slice().sort((a, b) => dist(a.x, a.y, P.x, P.y) - dist(b.x, b.y, P.x, P.y))[0];
   const lowAmmo = () => P.guns.filter(g => g.ammo !== Infinity).some(g => g.ammo < Math.min(maxAmmo(g.def), g.def.ammo) * 0.3);
   function nextDoor() {   // BFS to the nearest room worth visiting: unseen first, then the boss
@@ -3526,13 +3558,13 @@ if (BOT_MODE) { const s = document.createElement('script'); s.src = 'tests/gunli
     else if (room.cleared && bot.stuck > 0.6 && room.crates.length) { const c = nearest(room.crates); input.mx = c.x; input.my = c.y - 6; input.fire = true; }   // like a person: shoot the crate or bomb in the way
     else input.fire = false;
     // gun choice: strongest gun that still has ammo
-    const bestGun = P.guns.map((q, i) => [q, i]).filter(([q]) => q.ammo > 0).sort((a, b) => gunDps(b[0].def) - gunDps(a[0].def))[0];
-    if (bestGun && bestGun[1] !== P.gi && (!curGun().ammo || gunDps(bestGun[0].def) > gunDps(curGun().def) * 1.2)) P.gi = bestGun[1];
+    const bestGun = P.guns.map((q, i) => [q, i]).filter(([q]) => q.ammo > 0).sort((a, b) => gunValue(b[0].def) * rankMul(b[0]) - gunValue(a[0].def) * rankMul(a[0]))[0];
+    if (bestGun && bestGun[1] !== P.gi && (!curGun().ammo || gunValue(bestGun[0].def) * rankMul(bestGun[0]) > gunValue(curGun().def) * rankMul(curGun()) * 1.2)) P.gi = bestGun[1];
     // interact when standing on something it wanted
     const t = room.cleared ? target() : null;
-    if (t && t.use && dist(P.x, P.y, t.x, t.y) < 12) { if (t.gun && P.guns.length >= 2) P.gi = P.guns.map((g, i) => [gunDps(g.def), i]).sort((a, b) => a[0] - b[0])[0][1];   // hold the weaker gun, so that is the one dropped
+    if (t && t.use && dist(P.x, P.y, t.x, t.y) < 12) { if (t.gun && P.guns.length >= 2) P.gi = P.guns.map((g, i) => [gunValue(g.def) * rankMul(g), i]).sort((a, b) => a[0] - b[0])[0][1];   // hold the weaker gun, so that is the one dropped
       interact(); }
-    if (t && t.scrap && dist(P.x, P.y, t.x, t.y) < 12) { const b = P.guns.map((g, i) => [gunDps(g.def) * rankMul(g), i]).sort((a, c) => c[0] - a[0])[0]; P.gi = b[1]; const real = room.pickups.find(p => p.kind === 'gun' && !p.taken && p.x === t.x && p.y === t.y); if (real) scrapGun(real); else bot.ignore.add(bot.goalKey); }   // rank up the stronger gun (the real floor gun, not the target copy)
+    if (t && t.scrap && dist(P.x, P.y, t.x, t.y) < 12) { const b = P.guns.map((g, i) => [gunValue(g.def) * rankMul(g), i]).sort((a, c) => c[0] - a[0])[0]; P.gi = b[1]; const real = room.pickups.find(p => p.kind === 'gun' && !p.taken && p.x === t.x && p.y === t.y); if (real) scrapGun(real); else bot.ignore.add(bot.goalKey); }   // rank up the stronger gun (the real floor gun, not the target copy)
     if (t && t.bomb && dist(P.x, P.y, t.x, t.y) < 18 && !bombs.length) { input.mx = t.bomb.x; input.my = t.bomb.y; P.aim = Math.atan2(t.bomb.y - (P.y - 6), t.bomb.x - P.x); useBlank(); }
     if (room.cleared && bot.goalKey) { bot.goalT += DECIDE_S; if (bot.goalT > 8) { bot.ignore.add(bot.goalKey); bot.goalT = 0; } }
     // unstick: if it hasn't moved for a while, wander
